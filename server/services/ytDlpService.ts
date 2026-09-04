@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs';
-import { execFile, spawn } from 'child_process';
+import { execFile, execSync, spawn } from 'child_process';
 import { Readable } from 'stream';
 import { StreamResult } from '../providers/MediaProvider.js';
 import { fetchRemoteStream } from './streamHelper.js';
@@ -36,7 +36,33 @@ export interface YtDlpInfo {
 }
 
 class YtDlpService {
+  private ensureBinary(): void {
+    const isWin = process.platform === 'win32';
+    const targetFile = isWin ? BIN_PATH_WIN : BIN_PATH_NIX;
+    const binDir = path.join(process.cwd(), 'server', 'bin');
+
+    if (!fs.existsSync(targetFile)) {
+      try {
+        if (!fs.existsSync(binDir)) {
+          fs.mkdirSync(binDir, { recursive: true });
+        }
+        const downloadUrl = isWin
+          ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+          : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+
+        console.log(`[YtDlpService] Downloading binary to ${targetFile}...`);
+        const cmd = isWin
+          ? `powershell -Command "Invoke-WebRequest -Uri '${downloadUrl}' -OutFile '${targetFile}'"`
+          : `curl -L "${downloadUrl}" -o "${targetFile}" && chmod +x "${targetFile}"`;
+        execSync(cmd);
+      } catch (err) {
+        console.error('[YtDlpService] Failed to auto-download binary:', err);
+      }
+    }
+  }
+
   private get binaryPath(): string {
+    this.ensureBinary();
     const isWin = process.platform === 'win32';
     if (isWin && fs.existsSync(BIN_PATH_WIN)) {
       return BIN_PATH_WIN;
@@ -45,7 +71,7 @@ class YtDlpService {
       try {
         fs.chmodSync(BIN_PATH_NIX, 0o755);
       } catch {
-        // Ignore permission set error
+        // Ignore permission error
       }
       return BIN_PATH_NIX;
     }

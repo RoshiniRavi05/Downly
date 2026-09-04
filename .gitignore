@@ -22,3 +22,7 @@ temp_downloads
 Thumbs.db
 .vscode/
 .idea/
+
+# Binaries
+server/bin
+
