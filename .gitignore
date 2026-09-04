@@ -1,0 +1,24 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Build output
+dist
+dist-server
+build
+*.tsbuildinfo
+
+# Temporary media storage
+temp_downloads
+*.tmp
+
+# System & IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
