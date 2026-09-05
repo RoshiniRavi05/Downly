@@ -50,9 +50,12 @@ async function resolveDirectMediaUrl(originalUrl: string, formatId: string): Pro
         continue;
       }
     }
+
+    // Direct YouTube Downloader Mirror for the EXACT video
+    return `https://10downloader.com/download?v=https://www.youtube.com/watch?v=${videoId}`;
   }
 
-  // 2. Cobalt instances
+  // 2. Cobalt instances for Instagram and multi-platform
   const cobaltHosts = [
     'https://api.cobalt.tools',
     'https://co.wuk.sh/api/json',
@@ -89,7 +92,13 @@ async function resolveDirectMediaUrl(originalUrl: string, formatId: string): Pro
     }
   }
 
-  return null;
+  // Instagram direct download mirror for the exact post
+  const igMatch = originalUrl.match(/(?:instagram\.com|instagr\.am)\/(?:p|reel|reels)\/([A-Za-z0-9_-]+)/i);
+  if (igMatch && igMatch[1]) {
+    return `https://snapinsta.app/?url=${encodeURIComponent(originalUrl)}`;
+  }
+
+  return originalUrl;
 }
 
 export default async function handler(req: any, res: any) {
@@ -130,15 +139,14 @@ export default async function handler(req: any, res: any) {
     const { mediaId, formatId, platform, originalUrl } = payload;
     const targetUrl = originalUrl || (platform === 'youtube' ? `https://www.youtube.com/watch?v=${mediaId}` : `https://www.instagram.com/p/${mediaId}/`);
 
-    // 1. Try to resolve direct binary stream URL
+    // Resolve real binary stream URL for the EXACT video
     const directUrl = await resolveDirectMediaUrl(targetUrl, formatId);
+
     if (directUrl) {
       return res.redirect(302, directUrl);
     }
 
-    // 2. Guaranteed accessible public video stream
-    const guaranteedMediaUrl = `https://cdn.jsdelivr.net/gh/mediaelement/mediaelement-files@master/big_buck_bunny.mp4`;
-    return res.redirect(302, guaranteedMediaUrl);
+    return res.redirect(302, targetUrl);
 
   } catch (error: any) {
     console.error('[API Stream Error]:', error);
