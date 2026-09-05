@@ -158,12 +158,13 @@ export function App() {
       try {
         data = JSON.parse(text);
       } catch {
+        console.error('[Downly] Non-JSON API Response:', text);
         setAppState('error');
         setError({
           code: 'SERVER_ERROR',
-          message: response.ok
-            ? "Invalid response from server."
-            : `Server returned status ${response.status}. Please check Vercel logs or try again.`,
+          message: !response.ok
+            ? `Server Error (${response.status}). ${text.slice(0, 120)}`
+            : "Invalid response format from server.",
         });
         return;
       }
