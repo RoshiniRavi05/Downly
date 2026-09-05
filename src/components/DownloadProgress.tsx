@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AppState, MediaMetadata } from '../types';
-import { Download, CheckCircle2, Loader2, RefreshCw, Play, Volume2, Sparkles, ExternalLink } from 'lucide-react';
+import { Download, CheckCircle2, Loader2, RefreshCw, Play, Sparkles } from 'lucide-react';
 
 interface DownloadProgressProps {
   appState: AppState;
@@ -16,6 +16,7 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
   onReset,
 }) => {
   const [downloading, setDownloading] = useState(false);
+  const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
 
   if (appState !== 'preparing' && appState !== 'downloading' && appState !== 'completed') {
     return null;
@@ -28,19 +29,52 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
   const isYouTube = media?.platform === 'youtube';
   const videoId = media?.id || '';
 
-  const handleDirectDownload = () => {
+  const handleSaveToDevice = async () => {
     if (!downloadUrl) return;
     setDownloading(true);
+    setDownloadStatus('Fetching video file to device...');
 
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.setAttribute('download', `Downly_${media?.platform || 'media'}_${videoId || 'file'}.mp4`);
-    link.setAttribute('target', '_blank');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const cleanTitle = (media?.title || 'video').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().slice(0, 35) || 'video';
+    const filename = `Downly_${cleanTitle}.mp4`;
 
-    setTimeout(() => setDownloading(false), 2000);
+    try {
+      // 1. Fetch file as binary Blob
+      const response = await fetch(downloadUrl);
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
+      }
+
+      setDownloadStatus('Writing file to Downloads...');
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+
+      // 2. Trigger native browser download directly into device Downloads folder
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setTimeout(() => {
+        window.URL.revokeObjectURL(objectUrl);
+        setDownloading(false);
+        setDownloadStatus('Saved successfully!');
+        setTimeout(() => setDownloadStatus(null), 3000);
+      }, 800);
+
+    } catch (err) {
+      console.warn('[Downly] Blob fetch error, fallback to direct download:', err);
+      // Fallback: direct download link without opening video player tab
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setDownloading(false);
+      setDownloadStatus(null);
+    }
   };
 
   return (
@@ -95,10 +129,10 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
             </div>
             <div>
               <h3 className="text-xl font-extrabold text-white dark:text-white light:text-slate-900">
-                Ready to Save!
+                Download Ready!
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                {media?.title ? `"${media.title.slice(0, 60)}"` : 'Your media is ready.'}
+                {media?.title ? `"${media.title.slice(0, 50)}"` : 'Your media is ready to save.'}
               </p>
             </div>
 
@@ -120,12 +154,12 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                 {downloadUrl && (
                   <button
-                    onClick={handleDirectDownload}
+                    onClick={handleSaveToDevice}
                     disabled={downloading}
                     className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-sm shadow-lg transition-all transform active:scale-95 flex items-center justify-center space-x-2"
                   >
                     {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                    <span>{downloading ? 'Starting Download...' : 'Download Video Stream'}</span>
+                    <span>{downloading ? (downloadStatus || 'Downloading to device...') : 'Save to Device (MP4)'}</span>
                   </button>
                 )}
 
@@ -137,10 +171,16 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
                     className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-gradient-to-r from-accent-violet to-indigo-600 hover:opacity-95 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center space-x-2"
                   >
                     <Play className="w-4 h-4" />
-                    <span>Watch & Save in HD</span>
+                    <span>Watch in Full HD</span>
                   </a>
                 )}
               </div>
+
+              {downloadStatus && (
+                <p className="text-xs text-emerald-400 font-medium animate-fade-in">
+                  {downloadStatus}
+                </p>
+              )}
             </div>
 
             <div className="pt-4 border-t border-slate-800/60 dark:border-slate-800/60 light:border-slate-200">

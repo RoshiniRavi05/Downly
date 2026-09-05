@@ -136,6 +136,7 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string): 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -171,14 +172,34 @@ export default async function handler(req: any, res: any) {
     const { mediaId, formatId, platform, originalUrl } = payload;
     const targetUrl = originalUrl || (platform === 'youtube' ? `https://www.youtube.com/watch?v=${mediaId}` : `https://www.instagram.com/p/${mediaId}/`);
 
+    const isAudio = formatId.includes('audio');
+    const isMp3 = formatId.includes('mp3');
+    const ext = isMp3 ? 'mp3' : isAudio ? 'm4a' : 'mp4';
+    const filename = `Downly_${platform}_${mediaId}.${ext}`;
+
     // Resolve direct unblocked media stream (googlevideo CDN / direct stream)
     const directStreamUrl = await resolveDirectMediaStream(targetUrl, formatId);
 
     if (directStreamUrl) {
-      return res.redirect(302, directStreamUrl);
+      // Set attachment disposition headers
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+
+      try {
+        const remoteRes = await fetch(directStreamUrl);
+        if (remoteRes.ok && remoteRes.body) {
+          const arrayBuffer = await remoteRes.arrayBuffer();
+          res.setHeader('Content-Length', arrayBuffer.byteLength.toString());
+          return res.status(200).send(Buffer.from(arrayBuffer));
+        }
+      } catch {
+        // Fallback to direct redirect with attachment intent
+        return res.redirect(302, directStreamUrl);
+      }
     }
 
-    // Direct fallback: return JSON with original URL details or direct stream
+    // Direct fallback
     return res.redirect(302, `https://www.youtube-nocookie.com/embed/${mediaId}?autoplay=1`);
 
   } catch (error: any) {
