@@ -468,6 +468,7 @@ export function App() {
           <DownloadProgress
             appState={appState}
             downloadUrl={downloadUrl}
+            media={media}
             onReset={handleReset}
           />
 

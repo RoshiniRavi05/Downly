@@ -1,16 +1,18 @@
 import React from 'react';
-import { AppState } from '../types';
-import { Download, CheckCircle2, Loader2, RefreshCw } from 'lucide-react';
+import { AppState, MediaMetadata } from '../types';
+import { Download, CheckCircle2, Loader2, RefreshCw, ExternalLink, Sparkles } from 'lucide-react';
 
 interface DownloadProgressProps {
   appState: AppState;
   downloadUrl: string | null;
+  media: MediaMetadata | null;
   onReset: () => void;
 }
 
 export const DownloadProgress: React.FC<DownloadProgressProps> = ({
   appState,
   downloadUrl,
+  media,
   onReset,
 }) => {
   if (appState !== 'preparing' && appState !== 'downloading' && appState !== 'completed') {
@@ -20,6 +22,12 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
   const isPreparing = appState === 'preparing';
   const isDownloading = appState === 'downloading';
   const isCompleted = appState === 'completed';
+
+  const isYouTube = media?.platform === 'youtube';
+  const videoId = media?.id || '';
+
+  const ssUrl = isYouTube ? `https://www.ssyoutube.com/watch?v=${videoId}` : `https://snapinsta.app/`;
+  const y2mateUrl = isYouTube ? `https://y2mate.is/en/youtube/${videoId}` : `https://fastdl.app/`;
 
   return (
     <div className="w-full max-w-xl mx-auto my-6 animate-slide-up">
@@ -36,10 +44,9 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
                 Preparing your download...
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Validating security tokens and resolving high-speed stream headers.
+                Resolving media streams for {media?.title ? `"${media.title.slice(0, 40)}..."` : 'your video'}.
               </p>
             </div>
-            {/* Indeterminate shimmer progress bar */}
             <div className="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden">
               <div className="w-full h-full bg-gradient-to-r from-accent-violet via-accent-blue to-accent-violet animate-shimmer" />
             </div>
@@ -54,13 +61,12 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
             </div>
             <div>
               <h3 className="text-lg font-bold text-white dark:text-white light:text-slate-900">
-                Downloading stream...
+                Ready to download!
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Fetching media directly from backend stream pipeline.
+                Finalizing media download streams.
               </p>
             </div>
-            {/* Indeterminate animated progress bar */}
             <div className="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden">
               <div className="w-full h-full bg-accent-blue animate-pulse" />
             </div>
@@ -75,31 +81,60 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
             </div>
             <div>
               <h3 className="text-xl font-extrabold text-white dark:text-white light:text-slate-900">
-                Your download is ready!
+                Download is Ready!
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Click below to save the file to your device.
+                {media?.title ? `"${media.title.slice(0, 50)}"` : 'Your media is prepared.'}
               </p>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-              {downloadUrl && (
-                <a
-                  href={downloadUrl}
-                  download
-                  className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-sm shadow-lg transition-all transform active:scale-95 flex items-center justify-center space-x-2"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Download File</span>
-                </a>
-              )}
+            {/* Primary & Mirror Download Action Buttons */}
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                {downloadUrl && (
+                  <a
+                    href={downloadUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-sm shadow-lg transition-all transform active:scale-95 flex items-center justify-center space-x-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Download File (Primary)</span>
+                  </a>
+                )}
 
+                <a
+                  href={ssUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-gradient-to-r from-accent-violet to-indigo-600 hover:opacity-95 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center space-x-2"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Mirror 1 (SS Server)</span>
+                </a>
+              </div>
+
+              {/* Secondary Mirror Option */}
+              <div className="pt-2">
+                <a
+                  href={y2mateUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center space-x-1.5 text-xs text-slate-400 hover:text-accent-blue transition-colors"
+                >
+                  <span>Need an alternate mirror? Click here for Mirror 2</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-800/60 dark:border-slate-800/60 light:border-slate-200">
               <button
                 onClick={onReset}
-                className="w-full sm:w-auto px-5 py-3.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 text-sm font-semibold transition-colors flex items-center justify-center space-x-2"
+                className="px-5 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-colors inline-flex items-center space-x-2"
               >
-                <RefreshCw className="w-4 h-4" />
-                <span>Download Another</span>
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Download Another Link</span>
               </button>
             </div>
           </div>

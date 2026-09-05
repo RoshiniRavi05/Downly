@@ -52,7 +52,7 @@ async function resolveDirectMediaUrl(originalUrl: string, formatId: string): Pro
     }
 
     // Direct YouTube Downloader Mirror for the EXACT video
-    return `https://10downloader.com/download?v=https://www.youtube.com/watch?v=${videoId}`;
+    return `https://www.ssyoutube.com/watch?v=${videoId}`;
   }
 
   // 2. Cobalt instances for Instagram and multi-platform
