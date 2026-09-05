@@ -30,54 +30,71 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
   const videoId = media?.id || '';
 
   const handleDownloadFile = async (type: 'video' | 'audio' = 'video') => {
-    if (!downloadUrl && !videoId) return;
     setDownloading(true);
-    setDownloadStatus(type === 'video' ? 'Downloading video file to your device...' : 'Downloading MP3 audio to your device...');
+    setDownloadStatus(type === 'video' ? 'Converting & preparing video download...' : 'Extracting & preparing MP3 audio...');
 
     const cleanTitle = (media?.title || 'media').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().slice(0, 40) || 'media';
     const ext = type === 'audio' ? 'mp3' : 'mp4';
     const filename = `Downly_${cleanTitle}.${ext}`;
 
-    const targetStreamUrl = downloadUrl || `/api/stream/download?id=${videoId}`;
+    const originalUrl = media?.originalUrl || (isYouTube ? `https://www.youtube.com/watch?v=${videoId}` : `https://www.instagram.com/p/${videoId}/`);
+    const format = type === 'audio' ? 'mp3' : '720';
 
     try {
-      // Fetch as binary blob
-      const res = await fetch(targetStreamUrl);
-      if (!res.ok) {
-        throw new Error('Stream fetch error');
+      // 1. Fetch from high-speed converter engine for the EXACT video
+      const startUrl = `https://loader.to/ajax/download.php?button=1&start=1&end=1&format=${format}&url=${encodeURIComponent(originalUrl)}`;
+      const startRes = await fetch(startUrl);
+
+      let downloadFileUrl: string | null = null;
+
+      if (startRes.ok) {
+        const startData = await startRes.json();
+        if (startData && startData.id) {
+          const taskId = startData.id;
+          setDownloadStatus('Downloading media file to your device...');
+
+          for (let i = 0; i < 8; i++) {
+            await new Promise((r) => setTimeout(r, 1200));
+            const progRes = await fetch(`https://loader.to/ajax/progress.php?id=${taskId}`);
+            if (progRes.ok) {
+              const progData = await progRes.json();
+              if (progData.success === 1 && progData.download_url) {
+                downloadFileUrl = progData.download_url;
+                break;
+              }
+            }
+          }
+        }
       }
 
-      setDownloadStatus('Writing file to Downloads...');
-      const blob = await res.blob();
-      const objectUrl = window.URL.createObjectURL(blob);
+      const finalUrl = downloadFileUrl || downloadUrl || originalUrl;
 
+      // 2. Trigger native file download
       const link = document.createElement('a');
-      link.href = objectUrl;
+      link.href = finalUrl;
       link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
+      setDownloadStatus('Downloaded to your device!');
       setTimeout(() => {
-        window.URL.revokeObjectURL(objectUrl);
         setDownloading(false);
-        setDownloadStatus('Downloaded to your device!');
-        setTimeout(() => setDownloadStatus(null), 3500);
-      }, 800);
+        setDownloadStatus(null);
+      }, 3500);
 
     } catch (err) {
-      console.warn('[Downly] Blob save fallback:', err);
-      // Fallback: direct download link without opening a new tab
-      const link = document.createElement('a');
-      link.href = targetStreamUrl;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
+      console.warn('[Downly] Download stream fallback:', err);
+      if (downloadUrl) {
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
       setDownloading(false);
-      setDownloadStatus('Downloaded to your device!');
-      setTimeout(() => setDownloadStatus(null), 3500);
+      setDownloadStatus(null);
     }
   };
 
@@ -140,7 +157,7 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
               </p>
             </div>
 
-            {/* Clean, Direct Download Action Buttons */}
+            {/* Clean Action Buttons */}
             <div className="space-y-3 pt-2">
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                 <button
