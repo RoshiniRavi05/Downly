@@ -192,11 +192,12 @@ export function App() {
       setAppState('ready');
     } catch (err: any) {
       if (err.name === 'AbortError') return;
+      console.error('[Downly Fetch Error]:', err);
 
       setAppState('error');
       setError({
         code: 'NETWORK_ERROR',
-        message: "Network error occurred while processing link. Please check server connection.",
+        message: err.message ? `Network Error: ${err.message}` : "Network error occurred while processing link. Please check server connection.",
       });
     }
   };
