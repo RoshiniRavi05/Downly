@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AppState, MediaMetadata } from '../types';
-import { Download, CheckCircle2, Loader2, RefreshCw, ExternalLink, Sparkles } from 'lucide-react';
+import { Download, CheckCircle2, Loader2, RefreshCw, Play, Volume2, Sparkles, ExternalLink } from 'lucide-react';
 
 interface DownloadProgressProps {
   appState: AppState;
@@ -15,6 +15,8 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
   media,
   onReset,
 }) => {
+  const [downloading, setDownloading] = useState(false);
+
   if (appState !== 'preparing' && appState !== 'downloading' && appState !== 'completed') {
     return null;
   }
@@ -26,11 +28,23 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
   const isYouTube = media?.platform === 'youtube';
   const videoId = media?.id || '';
 
-  const ssUrl = isYouTube ? `https://www.ssyoutube.com/watch?v=${videoId}` : `https://snapinsta.app/`;
-  const y2mateUrl = isYouTube ? `https://y2mate.is/en/youtube/${videoId}` : `https://fastdl.app/`;
+  const handleDirectDownload = () => {
+    if (!downloadUrl) return;
+    setDownloading(true);
+
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.setAttribute('download', `Downly_${media?.platform || 'media'}_${videoId || 'file'}.mp4`);
+    link.setAttribute('target', '_blank');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    setTimeout(() => setDownloading(false), 2000);
+  };
 
   return (
-    <div className="w-full max-w-xl mx-auto my-6 animate-slide-up">
+    <div className="w-full max-w-2xl mx-auto my-6 animate-slide-up">
       <div className="glass-card rounded-2xl p-6 sm:p-8 border border-slate-800 dark:border-slate-800 light:border-slate-200 shadow-2xl text-center">
         
         {/* Preparing State */}
@@ -41,10 +55,10 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
             </div>
             <div>
               <h3 className="text-lg font-bold text-white dark:text-white light:text-slate-900">
-                Preparing your download...
+                Resolving media streams...
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Resolving media streams for {media?.title ? `"${media.title.slice(0, 40)}..."` : 'your video'}.
+                Connecting to high-speed CDN for {media?.title ? `"${media.title.slice(0, 45)}..."` : 'your media'}.
               </p>
             </div>
             <div className="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden">
@@ -61,10 +75,10 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
             </div>
             <div>
               <h3 className="text-lg font-bold text-white dark:text-white light:text-slate-900">
-                Ready to download!
+                Preparing download link...
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Finalizing media download streams.
+                Finalizing media stream headers.
               </p>
             </div>
             <div className="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden">
@@ -81,54 +95,55 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
             </div>
             <div>
               <h3 className="text-xl font-extrabold text-white dark:text-white light:text-slate-900">
-                Download is Ready!
+                Ready to Save!
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                {media?.title ? `"${media.title.slice(0, 50)}"` : 'Your media is prepared.'}
+                {media?.title ? `"${media.title.slice(0, 60)}"` : 'Your media is ready.'}
               </p>
             </div>
 
-            {/* Primary & Mirror Download Action Buttons */}
-            <div className="space-y-3">
+            {/* Embedded Stream Player Preview */}
+            {isYouTube && videoId && (
+              <div className="rounded-xl overflow-hidden shadow-lg border border-slate-800 dark:border-slate-800 light:border-slate-200 aspect-video max-w-lg mx-auto bg-black">
+                <iframe
+                  src={`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=0&rel=0`}
+                  title={media?.title || "Video Preview"}
+                  className="w-full h-full border-0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="space-y-3 pt-2">
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                 {downloadUrl && (
-                  <a
-                    href={downloadUrl}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    onClick={handleDirectDownload}
+                    disabled={downloading}
                     className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-sm shadow-lg transition-all transform active:scale-95 flex items-center justify-center space-x-2"
                   >
-                    <Download className="w-4 h-4" />
-                    <span>Download File (Primary)</span>
-                  </a>
+                    {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                    <span>{downloading ? 'Starting Download...' : 'Download Video Stream'}</span>
+                  </button>
                 )}
 
-                <a
-                  href={ssUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-gradient-to-r from-accent-violet to-indigo-600 hover:opacity-95 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center space-x-2"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>Mirror 1 (SS Server)</span>
-                </a>
-              </div>
-
-              {/* Secondary Mirror Option */}
-              <div className="pt-2">
-                <a
-                  href={y2mateUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center space-x-1.5 text-xs text-slate-400 hover:text-accent-blue transition-colors"
-                >
-                  <span>Need an alternate mirror? Click here for Mirror 2</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                {isYouTube && (
+                  <a
+                    href={`https://piped.video/watch?v=${videoId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-gradient-to-r from-accent-violet to-indigo-600 hover:opacity-95 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center space-x-2"
+                  >
+                    <Play className="w-4 h-4" />
+                    <span>Watch & Save in HD</span>
+                  </a>
+                )}
               </div>
             </div>
 
-            <div className="pt-2 border-t border-slate-800/60 dark:border-slate-800/60 light:border-slate-200">
+            <div className="pt-4 border-t border-slate-800/60 dark:border-slate-800/60 light:border-slate-200">
               <button
                 onClick={onReset}
                 className="px-5 py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 text-xs font-semibold transition-colors inline-flex items-center space-x-2"

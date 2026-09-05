@@ -2,27 +2,68 @@ import crypto from 'crypto';
 
 const TOKEN_SECRET = process.env.TOKEN_SECRET || 'downly_secret_token_key_change_in_production_987654321';
 
-async function resolveDirectMediaUrl(originalUrl: string, formatId: string): Promise<string | null> {
+async function resolveDirectMediaStream(originalUrl: string, formatId: string): Promise<string | null> {
   const isAudio = formatId.includes('audio');
 
-  // 1. YouTube Extractors
+  // 1. YouTube Direct googlevideo.com CDN Resolution via Piped & Invidious
   const ytMatch = originalUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|shorts\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
   if (ytMatch && ytMatch[1]) {
     const videoId = ytMatch[1];
     
-    // Invidious API public instances
+    // Piped APIs (extract direct unblocked googlevideo.com CDN stream URLs)
+    const pipedInstances = [
+      'https://pipedapi.kavin.rocks',
+      'https://api.piped.privacydev.net',
+      'https://pipedapi.tokhmi.xyz',
+      'https://piped-api.garudalinux.org',
+      'https://api.piped.projectsegfau.lt',
+    ];
+
+    for (const instance of pipedInstances) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+        const res = await fetch(`${instance}/streams/${videoId}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const data: any = await res.json();
+          
+          if (isAudio && Array.isArray(data.audioStreams) && data.audioStreams.length > 0) {
+            const m4a = data.audioStreams.find((s: any) => s.mimeType?.includes('audio/mp4') || s.format === 'M4A') || data.audioStreams[0];
+            if (m4a?.url) return m4a.url;
+          }
+
+          if (Array.isArray(data.videoStreams) && data.videoStreams.length > 0) {
+            const mp4s = data.videoStreams.filter((s: any) => s.mimeType?.includes('video/mp4') || s.videoOnly === false);
+            const matched = mp4s.find((s: any) => 
+              formatId.includes('720') ? s.quality?.includes('720') : s.quality?.includes('360')
+            ) || mp4s[0] || data.videoStreams[0];
+
+            if (matched?.url) return matched.url;
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    // Invidious API fallback
     const invidiousHosts = [
       'https://yewtu.be',
       'https://invidious.jing.rocks',
       'https://invidious.nerdvpn.de',
       'https://invidious.private.coffee',
-      'https://inv.nadeko.net',
     ];
 
     for (const host of invidiousHosts) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3500);
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
 
         const res = await fetch(`${host}/api/v1/videos/${videoId}`, {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
@@ -50,12 +91,9 @@ async function resolveDirectMediaUrl(originalUrl: string, formatId: string): Pro
         continue;
       }
     }
-
-    // Direct YouTube Downloader Mirror for the EXACT video
-    return `https://www.ssyoutube.com/watch?v=${videoId}`;
   }
 
-  // 2. Cobalt instances for Instagram and multi-platform
+  // 2. Cobalt API instances for Instagram & multi-platform
   const cobaltHosts = [
     'https://api.cobalt.tools',
     'https://co.wuk.sh/api/json',
@@ -64,7 +102,7 @@ async function resolveDirectMediaUrl(originalUrl: string, formatId: string): Pro
   for (const host of cobaltHosts) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
 
       const response = await fetch(host, {
         method: 'POST',
@@ -92,13 +130,7 @@ async function resolveDirectMediaUrl(originalUrl: string, formatId: string): Pro
     }
   }
 
-  // Instagram direct download mirror for the exact post
-  const igMatch = originalUrl.match(/(?:instagram\.com|instagr\.am)\/(?:p|reel|reels)\/([A-Za-z0-9_-]+)/i);
-  if (igMatch && igMatch[1]) {
-    return `https://snapinsta.app/?url=${encodeURIComponent(originalUrl)}`;
-  }
-
-  return originalUrl;
+  return null;
 }
 
 export default async function handler(req: any, res: any) {
@@ -139,14 +171,15 @@ export default async function handler(req: any, res: any) {
     const { mediaId, formatId, platform, originalUrl } = payload;
     const targetUrl = originalUrl || (platform === 'youtube' ? `https://www.youtube.com/watch?v=${mediaId}` : `https://www.instagram.com/p/${mediaId}/`);
 
-    // Resolve real binary stream URL for the EXACT video
-    const directUrl = await resolveDirectMediaUrl(targetUrl, formatId);
+    // Resolve direct unblocked media stream (googlevideo CDN / direct stream)
+    const directStreamUrl = await resolveDirectMediaStream(targetUrl, formatId);
 
-    if (directUrl) {
-      return res.redirect(302, directUrl);
+    if (directStreamUrl) {
+      return res.redirect(302, directStreamUrl);
     }
 
-    return res.redirect(302, targetUrl);
+    // Direct fallback: return JSON with original URL details or direct stream
+    return res.redirect(302, `https://www.youtube-nocookie.com/embed/${mediaId}?autoplay=1`);
 
   } catch (error: any) {
     console.error('[API Stream Error]:', error);
