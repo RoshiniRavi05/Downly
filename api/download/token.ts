@@ -1,5 +1,6 @@
-import { tokenService } from '../../server/services/tokenService';
-import { validateAndSanitizeUrl } from '../../server/middleware/security';
+import crypto from 'crypto';
+
+const TOKEN_SECRET = process.env.TOKEN_SECRET || 'downly_secret_token_key_change_in_production_987654321';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -42,34 +43,26 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const validation = validateAndSanitizeUrl(originalUrl);
-    if (!validation.valid || !validation.normalizedUrl) {
-      return res.status(400).json({
-        success: false,
-        code: 'INVALID_URL',
-        message: 'Invalid original URL.',
-      });
-    }
+    const ttlSeconds = 300;
+    const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
+    const payload = { mediaId, formatId, platform, originalUrl, exp };
 
-    const { token, expiresIn } = tokenService.generateToken(
-      String(mediaId),
-      String(formatId),
-      platform || 'youtube',
-      validation.normalizedUrl
-    );
+    const base64Payload = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+    const signature = crypto.createHmac('sha256', TOKEN_SECRET).update(base64Payload).digest('base64url');
+    const token = `${base64Payload}.${signature}`;
 
     return res.status(200).json({
       success: true,
       token,
-      expiresIn,
+      expiresIn: ttlSeconds,
       streamUrl: `/api/stream/${token}`,
     });
   } catch (error: any) {
     console.error('[API Token Error]:', error);
     return res.status(500).json({
       success: false,
-      code: error?.code || 'SERVER_ERROR',
-      message: error?.message || 'Failed to generate download token.',
+      code: 'SERVER_ERROR',
+      message: 'Failed to create download token.',
     });
   }
 }
