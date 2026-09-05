@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
-import { validateAndSanitizeUrl } from '../middleware/security.js';
-import { providerRegistry } from '../providers/ProviderRegistry.js';
+import { validateAndSanitizeUrl } from '../middleware/security';
+import { providerRegistry } from '../providers/ProviderRegistry';
 
 export async function analyzeController(req: Request, res: Response, next: NextFunction) {
   try {

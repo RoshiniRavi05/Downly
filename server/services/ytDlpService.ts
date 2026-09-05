@@ -1,12 +1,18 @@
+import os from 'os';
 import path from 'path';
 import fs from 'fs';
 import { execFile, execSync, spawn } from 'child_process';
 import { Readable } from 'stream';
-import { StreamResult } from '../providers/MediaProvider.js';
-import { fetchRemoteStream } from './streamHelper.js';
+import { StreamResult } from '../providers/MediaProvider';
+import { fetchRemoteStream } from './streamHelper';
 
-const BIN_PATH_WIN = path.join(process.cwd(), 'server', 'bin', 'yt-dlp.exe');
-const BIN_PATH_NIX = path.join(process.cwd(), 'server', 'bin', 'yt-dlp');
+const isVercel = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
+const BASE_BIN_DIR = isVercel
+  ? path.join(os.tmpdir(), 'downly-bin')
+  : path.join(process.cwd(), 'server', 'bin');
+
+const BIN_PATH_WIN = path.join(BASE_BIN_DIR, 'yt-dlp.exe');
+const BIN_PATH_NIX = path.join(BASE_BIN_DIR, 'yt-dlp');
 
 export interface YtDlpFormat {
   format_id: string;
@@ -39,12 +45,11 @@ class YtDlpService {
   private ensureBinary(): void {
     const isWin = process.platform === 'win32';
     const targetFile = isWin ? BIN_PATH_WIN : BIN_PATH_NIX;
-    const binDir = path.join(process.cwd(), 'server', 'bin');
 
     if (!fs.existsSync(targetFile)) {
       try {
-        if (!fs.existsSync(binDir)) {
-          fs.mkdirSync(binDir, { recursive: true });
+        if (!fs.existsSync(BASE_BIN_DIR)) {
+          fs.mkdirSync(BASE_BIN_DIR, { recursive: true });
         }
         const downloadUrl = isWin
           ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'

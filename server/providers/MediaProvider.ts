@@ -1,4 +1,4 @@
-import { MediaMetadata, PlatformType } from '../types/index.js';
+import { MediaMetadata, PlatformType } from '../types/index';
 
 export interface StreamResult {
   stream: NodeJS.ReadableStream;

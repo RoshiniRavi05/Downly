@@ -1,6 +1,6 @@
-import { MediaProvider, StreamResult } from './MediaProvider.js';
-import { MediaMetadata, VideoFormat, AudioFormat, MediaType } from '../types/index.js';
-import { ytDlpService } from '../services/ytDlpService.js';
+import { MediaProvider, StreamResult } from './MediaProvider';
+import { MediaMetadata, VideoFormat, AudioFormat, MediaType } from '../types/index';
+import { ytDlpService } from '../services/ytDlpService';
 import http from 'http';
 import https from 'https';
 

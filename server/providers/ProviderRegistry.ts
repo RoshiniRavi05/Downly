@@ -1,6 +1,6 @@
-import { MediaProvider } from './MediaProvider.js';
-import { YouTubeProvider } from './YouTubeProvider.js';
-import { InstagramProvider } from './InstagramProvider.js';
+import { MediaProvider } from './MediaProvider';
+import { YouTubeProvider } from './YouTubeProvider';
+import { InstagramProvider } from './InstagramProvider';
 
 export class ProviderRegistry {
   private providers: MediaProvider[] = [];

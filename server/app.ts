@@ -4,10 +4,10 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import fs from 'fs';
-import { CONFIG } from './config/index.js';
-import { errorHandler } from './middleware/security.js';
-import { analyzeController } from './controllers/analyzeController.js';
-import { createDownloadTokenController, streamMediaController } from './controllers/downloadController.js';
+import { CONFIG } from './config/index';
+import { errorHandler } from './middleware/security';
+import { analyzeController } from './controllers/analyzeController';
+import { createDownloadTokenController, streamMediaController } from './controllers/downloadController';
 
 export const app = express();
 

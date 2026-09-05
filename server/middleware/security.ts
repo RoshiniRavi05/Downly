@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { CONFIG } from '../config/index.js';
+import { CONFIG } from '../config/index';
 
 /**
  * Validates whether a URL string is safe, well-formed, and strictly on our domain allowlist.

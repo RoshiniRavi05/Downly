@@ -1,6 +1,6 @@
 import crypto from 'crypto';
-import { CONFIG } from '../config/index.js';
-import { DownloadTokenPayload, PlatformType } from '../types/index.js';
+import { CONFIG } from '../config/index';
+import { DownloadTokenPayload, PlatformType } from '../types/index';
 
 export class TokenService {
   /**

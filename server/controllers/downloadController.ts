@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import { tokenService } from '../services/tokenService.js';
-import { providerRegistry } from '../providers/ProviderRegistry.js';
-import { validateAndSanitizeUrl } from '../middleware/security.js';
+import { tokenService } from '../services/tokenService';
+import { providerRegistry } from '../providers/ProviderRegistry';
+import { validateAndSanitizeUrl } from '../middleware/security';
 
 export async function createDownloadTokenController(req: Request, res: Response, next: NextFunction) {
   try {

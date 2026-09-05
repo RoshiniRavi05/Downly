@@ -1,8 +1,8 @@
 import http from 'http';
 import https from 'https';
 import { Readable } from 'stream';
-import { StreamResult } from '../providers/MediaProvider.js';
-import { ytDlpService } from './ytDlpService.js';
+import { StreamResult } from '../providers/MediaProvider';
+import { ytDlpService } from './ytDlpService';
 
 /**
  * Fetches a readable stream from a remote media URL, following up to 5 HTTP/HTTPS redirects.

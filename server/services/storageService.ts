@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { CONFIG } from '../config/index.js';
+import { CONFIG } from '../config/index';
 
 export class StorageService {
   private tempDir: string;
