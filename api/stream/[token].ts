@@ -1,18 +1,16 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { tokenService } from '../../server/services/tokenService';
 import { providerRegistry } from '../../server/providers/ProviderRegistry';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
 
   try {
-    const tokenStr = (req.query.token || req.query['[token]']) as string;
+    const tokenStr = (req.query?.token || req.query?.['[token]']) as string;
     if (!tokenStr) {
       return res.status(400).json({
         success: false,
@@ -27,7 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (e: any) {
       return res.status(403).json({
         success: false,
-        code: e.code || 'INVALID_TOKEN',
+        code: e?.code || 'INVALID_TOKEN',
         message: 'Invalid or expired download token.',
       });
     }
@@ -44,7 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res.setHeader('Content-Length', result.contentLength.toString());
     }
 
-    if ('pipe' in result.stream) {
+    if (result.stream && typeof (result.stream as any).pipe === 'function') {
       (result.stream as any).pipe(res);
     } else {
       return res.status(500).json({
@@ -57,8 +55,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('[API Stream Error]:', error);
     return res.status(500).json({
       success: false,
-      code: error.code || 'SERVER_ERROR',
-      message: error.message || 'Media streaming failed.',
+      code: error?.code || 'SERVER_ERROR',
+      message: error?.message || 'Media streaming failed.',
     });
   }
 }

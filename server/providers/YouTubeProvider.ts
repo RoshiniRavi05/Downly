@@ -74,9 +74,18 @@ export class YouTubeProvider implements MediaProvider {
     let thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
     let duration = type === 'short' ? 45 : 320;
 
-    let metadataFetched = false;
+    // 1. Try instant oEmbed parsing first (Fastest & Zero binary/auth needed)
+    try {
+      const oembedUrl = `https://www.youtube.com/oembed?url=${targetUrl}&format=json`;
+      const oembedData = await this.fetchJson(oembedUrl);
+      if (oembedData?.title) title = oembedData.title;
+      if (oembedData?.author_name) creator = oembedData.author_name;
+      if (oembedData?.thumbnail_url) thumbnail = oembedData.thumbnail_url;
+    } catch {
+      // Non-critical
+    }
 
-    // 1. Try pure JS @distube/ytdl-core metadata extraction (Fastest & Serverless Native)
+    // 2. Try ytdl-core metadata enrichment
     try {
       const info = await ytdl.getInfo(targetUrl);
       if (info.videoDetails) {
@@ -90,37 +99,9 @@ export class YouTubeProvider implements MediaProvider {
           const parsedDur = parseInt(d.lengthSeconds, 10);
           if (!isNaN(parsedDur) && parsedDur > 0) duration = parsedDur;
         }
-        metadataFetched = true;
       }
-    } catch (ytdlErr) {
-      console.warn('[YouTubeProvider] ytdl-core info failed, trying fallback:', ytdlErr);
-    }
-
-    // 2. Fallback to yt-dlp metadata extraction
-    if (!metadataFetched) {
-      try {
-        const info = await ytDlpService.getVideoInfo(targetUrl);
-        if (info.title) title = info.title;
-        if (info.uploader || info.channel) creator = info.uploader || info.channel || creator;
-        if (info.thumbnail) thumbnail = info.thumbnail;
-        if (typeof info.duration === 'number' && info.duration > 0) duration = info.duration;
-        metadataFetched = true;
-      } catch (e) {
-        // 3. Fallback to oEmbed parsing
-        try {
-          const oembedUrl = `https://www.youtube.com/oembed?url=${targetUrl}&format=json`;
-          const oembedData = await this.fetchJson(oembedUrl);
-          if (oembedData?.title) title = oembedData.title;
-          if (oembedData?.author_name) creator = oembedData.author_name;
-          if (oembedData?.thumbnail_url) thumbnail = oembedData.thumbnail_url;
-        } catch (oembedErr: any) {
-          if (oembedErr.statusCode === 404 || oembedErr.statusCode === 401 || oembedErr.statusCode === 403) {
-            const err: any = new Error('Content unavailable or private');
-            err.code = oembedErr.statusCode === 404 ? 'CONTENT_UNAVAILABLE' : 'PRIVATE_CONTENT';
-            throw err;
-          }
-        }
-      }
+    } catch {
+      // Non-critical fallback
     }
 
     const formattedDuration = `${Math.floor(duration / 60)

@@ -1,8 +1,7 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { providerRegistry } from '../server/providers/ProviderRegistry';
 import { validateAndSanitizeUrl } from '../server/middleware/security';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: any, res: any) {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -13,8 +12,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   );
 
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
 
   if (req.method !== 'POST') {
@@ -26,7 +24,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { url } = req.body || {};
+    let body = req.body;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        body = {};
+      }
+    }
+
+    const { url } = body || {};
 
     const validation = validateAndSanitizeUrl(url);
     if (!validation.valid || !validation.normalizedUrl) {
@@ -49,8 +56,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('[API Analyze Error]:', error);
     return res.status(500).json({
       success: false,
-      code: error.code || 'SERVER_ERROR',
-      message: error.message || 'Failed to extract media details from URL.',
+      code: error?.code || 'SERVER_ERROR',
+      message: error?.message || 'Failed to extract media details from URL.',
     });
   }
 }
