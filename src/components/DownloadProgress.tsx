@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AppState, MediaMetadata } from '../types';
-import { Download, CheckCircle2, Loader2, RefreshCw, Music, Video, Sparkles } from 'lucide-react';
+import { Download, CheckCircle2, Loader2, RefreshCw, Music } from 'lucide-react';
 
 interface DownloadProgressProps {
   appState: AppState;
@@ -29,22 +29,26 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
   const isYouTube = media?.platform === 'youtube';
   const videoId = media?.id || '';
 
-  const handleSaveToDevice = async () => {
-    if (!downloadUrl) return;
+  const handleDownloadFile = async (type: 'video' | 'audio' = 'video') => {
+    if (!downloadUrl && !videoId) return;
     setDownloading(true);
-    setDownloadStatus('Starting download to your device...');
+    setDownloadStatus(type === 'video' ? 'Downloading video file to your device...' : 'Downloading MP3 audio to your device...');
 
-    const cleanTitle = (media?.title || 'video').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().slice(0, 35) || 'video';
-    const filename = `Downly_${cleanTitle}.mp4`;
+    const cleanTitle = (media?.title || 'media').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().slice(0, 40) || 'media';
+    const ext = type === 'audio' ? 'mp3' : 'mp4';
+    const filename = `Downly_${cleanTitle}.${ext}`;
+
+    const targetStreamUrl = downloadUrl || `/api/stream/download?id=${videoId}`;
 
     try {
-      const response = await fetch(downloadUrl);
-      if (!response.ok) {
-        throw new Error(`Status ${response.status}`);
+      // Fetch as binary blob
+      const res = await fetch(targetStreamUrl);
+      if (!res.ok) {
+        throw new Error('Stream fetch error');
       }
 
-      setDownloadStatus('Saving file...');
-      const blob = await response.blob();
+      setDownloadStatus('Writing file to Downloads...');
+      const blob = await res.blob();
       const objectUrl = window.URL.createObjectURL(blob);
 
       const link = document.createElement('a');
@@ -57,25 +61,28 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
       setTimeout(() => {
         window.URL.revokeObjectURL(objectUrl);
         setDownloading(false);
-        setDownloadStatus('Download completed!');
-        setTimeout(() => setDownloadStatus(null), 3000);
-      }, 1000);
+        setDownloadStatus('Downloaded to your device!');
+        setTimeout(() => setDownloadStatus(null), 3500);
+      }, 800);
 
-    } catch {
-      // Fallback direct link download
+    } catch (err) {
+      console.warn('[Downly] Blob save fallback:', err);
+      // Fallback: direct download link without opening a new tab
       const link = document.createElement('a');
-      link.href = downloadUrl;
+      link.href = targetStreamUrl;
       link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+
       setDownloading(false);
-      setDownloadStatus(null);
+      setDownloadStatus('Downloaded to your device!');
+      setTimeout(() => setDownloadStatus(null), 3500);
     }
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto my-6 animate-slide-up">
+    <div className="w-full max-w-xl mx-auto my-6 animate-slide-up">
       <div className="glass-card rounded-2xl p-6 sm:p-8 border border-slate-800 dark:border-slate-800 light:border-slate-200 shadow-2xl text-center">
         
         {/* Preparing State */}
@@ -89,7 +96,7 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
                 Resolving media streams...
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Connecting to high-speed CDN for {media?.title ? `"${media.title.slice(0, 45)}..."` : 'your media'}.
+                Connecting to high-speed stream for {media?.title ? `"${media.title.slice(0, 45)}..."` : 'your media'}.
               </p>
             </div>
             <div className="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden">
@@ -109,7 +116,7 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
                 Preparing download...
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Generating secure download tokens.
+                Generating secure download stream.
               </p>
             </div>
             <div className="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden">
@@ -126,67 +133,39 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
             </div>
             <div>
               <h3 className="text-xl font-extrabold text-white dark:text-white light:text-slate-900">
-                Ready to Download!
+                Ready to Save!
               </h3>
-              <p className="text-xs text-slate-400 mt-1 font-medium">
-                {media?.title ? `"${media.title.slice(0, 55)}"` : 'Your media is prepared.'}
+              <p className="text-xs text-slate-400 mt-1 font-medium line-clamp-1">
+                {media?.title || 'Your file is ready to download.'}
               </p>
             </div>
 
-            {/* Direct High-Speed Downloader Widget for YouTube */}
-            {isYouTube && videoId && (
-              <div className="bg-slate-900/80 dark:bg-slate-900/80 light:bg-slate-100 rounded-2xl p-5 border border-slate-800 dark:border-slate-800 light:border-slate-300 shadow-inner">
-                <div className="flex items-center justify-center space-x-2 mb-3">
-                  <Sparkles className="w-4 h-4 text-accent-violet" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-slate-300 dark:text-slate-300 light:text-slate-700">
-                    Instant File Downloader
-                  </span>
-                </div>
-
-                <div className="overflow-hidden rounded-xl border border-slate-700/50 dark:border-slate-700/50 light:border-slate-300 bg-black/40 flex items-center justify-center min-h-[65px]">
-                  <iframe
-                    src={`https://loader.to/api/button/?url=https://www.youtube.com/watch?v=${videoId}&f=720&color=8b5cf6`}
-                    title="Download Button"
-                    className="w-full h-[65px] border-0"
-                    scrolling="no"
-                  />
-                </div>
-                
-                <p className="text-[11px] text-slate-400 mt-2">
-                  Click the button above to choose HD Video (1080p/720p) or MP3 Audio to save directly to your device.
-                </p>
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="space-y-3 pt-1">
+            {/* Clean, Direct Download Action Buttons */}
+            <div className="space-y-3 pt-2">
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                {downloadUrl && (
-                  <button
-                    onClick={handleSaveToDevice}
-                    disabled={downloading}
-                    className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-sm shadow-lg transition-all transform active:scale-95 flex items-center justify-center space-x-2"
-                  >
-                    {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                    <span>{downloading ? (downloadStatus || 'Downloading...') : 'Save Video to Downloads'}</span>
-                  </button>
-                )}
+                <button
+                  onClick={() => handleDownloadFile('video')}
+                  disabled={downloading}
+                  className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-sm shadow-lg transition-all transform active:scale-95 flex items-center justify-center space-x-2"
+                >
+                  {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                  <span>{downloading ? (downloadStatus || 'Downloading...') : 'Download Video (MP4)'}</span>
+                </button>
 
                 {isYouTube && (
-                  <a
-                    href={`https://loader.to/api/button/?url=https://www.youtube.com/watch?v=${videoId}&f=mp3`}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    onClick={() => handleDownloadFile('audio')}
+                    disabled={downloading}
                     className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-gradient-to-r from-accent-violet to-indigo-600 hover:opacity-95 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center space-x-2"
                   >
                     <Music className="w-4 h-4" />
-                    <span>Download MP3 Audio</span>
-                  </a>
+                    <span>Download Audio (MP3)</span>
+                  </button>
                 )}
               </div>
 
               {downloadStatus && (
-                <p className="text-xs text-emerald-400 font-medium animate-fade-in">
+                <p className="text-xs text-emerald-400 font-medium animate-fade-in pt-1">
                   {downloadStatus}
                 </p>
               )}

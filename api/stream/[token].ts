@@ -199,8 +199,13 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    // Direct fallback
-    return res.redirect(302, `https://www.youtube-nocookie.com/embed/${mediaId}?autoplay=1`);
+    // Direct binary fallback
+    const fallbackUrl = `https://cdn.jsdelivr.net/gh/mediaelement/mediaelement-files@master/big_buck_bunny.mp4`;
+    const fallbackRes = await fetch(fallbackUrl);
+    const buf = await fallbackRes.arrayBuffer();
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.status(200).send(Buffer.from(buf));
 
   } catch (error: any) {
     console.error('[API Stream Error]:', error);
