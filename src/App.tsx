@@ -153,7 +153,20 @@ export function App() {
         signal: controller.signal,
       });
 
-      const data = await response.json();
+      let data: any = {};
+      const text = await response.text();
+      try {
+        data = JSON.parse(text);
+      } catch {
+        setAppState('error');
+        setError({
+          code: 'SERVER_ERROR',
+          message: response.ok
+            ? "Invalid response from server."
+            : `Server returned status ${response.status}. Please check Vercel logs or try again.`,
+        });
+        return;
+      }
 
       if (!response.ok || !data.success) {
         setAppState('error');

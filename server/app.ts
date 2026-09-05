@@ -75,7 +75,7 @@ const streamLimiter = rateLimit({
 });
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
+app.get(['/api/health', '/health'], (req, res) => {
   res.json({
     status: 'ok',
     service: 'Downly Media API',
@@ -84,9 +84,9 @@ app.get('/api/health', (req, res) => {
 });
 
 // API Routes
-app.post('/api/analyze', analyzeLimiter, analyzeController);
-app.post('/api/download/token', downloadLimiter, createDownloadTokenController);
-app.get('/api/stream/:token', streamLimiter, streamMediaController);
+app.post(['/api/analyze', '/analyze'], analyzeLimiter, analyzeController);
+app.post(['/api/download/token', '/download/token'], downloadLimiter, createDownloadTokenController);
+app.get(['/api/stream/:token', '/stream/:token'], streamLimiter, streamMediaController);
 
 // Global Error Handler
 app.use(errorHandler);

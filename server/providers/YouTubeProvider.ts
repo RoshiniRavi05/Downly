@@ -1,6 +1,7 @@
 import { MediaProvider, StreamResult } from './MediaProvider';
 import { MediaMetadata, VideoFormat, AudioFormat, MediaType } from '../types/index';
 import { ytDlpService } from '../services/ytDlpService';
+import ytdl from '@distube/ytdl-core';
 import http from 'http';
 import https from 'https';
 
@@ -71,26 +72,51 @@ export class YouTubeProvider implements MediaProvider {
     let thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
     let duration = type === 'short' ? 45 : 320;
 
-    // Try yt-dlp metadata extraction
+    let metadataFetched = false;
+
+    // 1. Try pure JS @distube/ytdl-core metadata extraction (Fastest & Serverless Native)
     try {
-      const info = await ytDlpService.getVideoInfo(targetUrl);
-      if (info.title) title = info.title;
-      if (info.uploader || info.channel) creator = info.uploader || info.channel || creator;
-      if (info.thumbnail) thumbnail = info.thumbnail;
-      if (typeof info.duration === 'number' && info.duration > 0) duration = info.duration;
-    } catch (e) {
-      // Fallback to oEmbed parsing
+      const info = await ytdl.getInfo(targetUrl);
+      if (info.videoDetails) {
+        const d = info.videoDetails;
+        if (d.title) title = d.title;
+        if (d.author?.name) creator = d.author.name;
+        if (d.thumbnails && d.thumbnails.length > 0) {
+          thumbnail = d.thumbnails[d.thumbnails.length - 1].url;
+        }
+        if (d.lengthSeconds) {
+          const parsedDur = parseInt(d.lengthSeconds, 10);
+          if (!isNaN(parsedDur) && parsedDur > 0) duration = parsedDur;
+        }
+        metadataFetched = true;
+      }
+    } catch (ytdlErr) {
+      console.warn('[YouTubeProvider] ytdl-core info failed, trying fallback:', ytdlErr);
+    }
+
+    // 2. Fallback to yt-dlp metadata extraction
+    if (!metadataFetched) {
       try {
-        const oembedUrl = `https://www.youtube.com/oembed?url=${targetUrl}&format=json`;
-        const oembedData = await this.fetchJson(oembedUrl);
-        if (oembedData?.title) title = oembedData.title;
-        if (oembedData?.author_name) creator = oembedData.author_name;
-        if (oembedData?.thumbnail_url) thumbnail = oembedData.thumbnail_url;
-      } catch (oembedErr: any) {
-        if (oembedErr.statusCode === 404 || oembedErr.statusCode === 401 || oembedErr.statusCode === 403) {
-          const err: any = new Error('Content unavailable or private');
-          err.code = oembedErr.statusCode === 404 ? 'CONTENT_UNAVAILABLE' : 'PRIVATE_CONTENT';
-          throw err;
+        const info = await ytDlpService.getVideoInfo(targetUrl);
+        if (info.title) title = info.title;
+        if (info.uploader || info.channel) creator = info.uploader || info.channel || creator;
+        if (info.thumbnail) thumbnail = info.thumbnail;
+        if (typeof info.duration === 'number' && info.duration > 0) duration = info.duration;
+        metadataFetched = true;
+      } catch (e) {
+        // 3. Fallback to oEmbed parsing
+        try {
+          const oembedUrl = `https://www.youtube.com/oembed?url=${targetUrl}&format=json`;
+          const oembedData = await this.fetchJson(oembedUrl);
+          if (oembedData?.title) title = oembedData.title;
+          if (oembedData?.author_name) creator = oembedData.author_name;
+          if (oembedData?.thumbnail_url) thumbnail = oembedData.thumbnail_url;
+        } catch (oembedErr: any) {
+          if (oembedErr.statusCode === 404 || oembedErr.statusCode === 401 || oembedErr.statusCode === 403) {
+            const err: any = new Error('Content unavailable or private');
+            err.code = oembedErr.statusCode === 404 ? 'CONTENT_UNAVAILABLE' : 'PRIVATE_CONTENT';
+            throw err;
+          }
         }
       }
     }
@@ -184,7 +210,28 @@ export class YouTubeProvider implements MediaProvider {
   async getDownloadStream(mediaId: string, formatId: string, originalUrl: string): Promise<StreamResult> {
     const videoId = mediaId || this.extractVideoId(originalUrl)?.id || 'media';
     const targetUrl = originalUrl || `https://www.youtube.com/watch?v=${videoId}`;
-    return ytDlpService.getMediaStream(targetUrl, formatId, `YouTube_${videoId}`);
+
+    // Try pure JS ytdl streaming first
+    try {
+      const isAudio = formatId.includes('audio');
+      const isMp3 = formatId.includes('mp3');
+      const ext = isMp3 ? 'mp3' : isAudio ? 'm4a' : 'mp4';
+      const mime = isMp3 ? 'audio/mpeg' : isAudio ? 'audio/mp4' : 'video/mp4';
+
+      const stream = ytdl(targetUrl, {
+        quality: isAudio ? 'highestaudio' : 'highestvideo',
+        filter: isAudio ? 'audioonly' : 'videoandaudio',
+      });
+
+      return {
+        stream: stream as unknown as NodeJS.ReadableStream,
+        filename: `Downly_YouTube_${videoId}_${formatId}.${ext}`,
+        mimeType: mime,
+      };
+    } catch (ytdlStreamErr) {
+      console.warn('[YouTubeProvider] ytdl stream failed, falling back to ytDlpService:', ytdlStreamErr);
+      return ytDlpService.getMediaStream(targetUrl, formatId, `YouTube_${videoId}`);
+    }
   }
 
   private fetchJson(url: string): Promise<any> {
