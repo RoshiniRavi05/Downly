@@ -1,9 +1,11 @@
 import { MediaProvider, StreamResult } from './MediaProvider';
 import { MediaMetadata, VideoFormat, AudioFormat, MediaType } from '../types/index';
 import { ytDlpService } from '../services/ytDlpService';
-import ytdl from '@distube/ytdl-core';
+import ytdlPackage from '@distube/ytdl-core';
 import http from 'http';
 import https from 'https';
+
+const ytdl: typeof import('@distube/ytdl-core') = (ytdlPackage as any).default || ytdlPackage;
 
 export class YouTubeProvider implements MediaProvider {
   readonly id = 'youtube' as const;

@@ -7,47 +7,45 @@ export class StorageService {
 
   constructor() {
     this.tempDir = CONFIG.TEMP_DIR;
-    this.ensureTempDir();
-    this.startCleanupJob();
   }
 
   private ensureTempDir(): void {
-    if (!fs.existsSync(this.tempDir)) {
-      fs.mkdirSync(this.tempDir, { recursive: true });
+    try {
+      if (!fs.existsSync(this.tempDir)) {
+        fs.mkdirSync(this.tempDir, { recursive: true });
+      }
+    } catch (err) {
+      console.warn('[StorageService] Could not create temp directory:', err);
     }
   }
 
-  /**
-   * Periodically deletes temporary download files older than TTL.
-   */
-  private startCleanupJob(): void {
-    setInterval(() => {
-      this.cleanupExpiredFiles();
-    }, 60000); // Check every 60 seconds
-  }
-
   public cleanupExpiredFiles(): void {
-    if (!fs.existsSync(this.tempDir)) return;
+    try {
+      if (!fs.existsSync(this.tempDir)) return;
 
-    fs.readdir(this.tempDir, (err, files) => {
-      if (err) return;
+      fs.readdir(this.tempDir, (err, files) => {
+        if (err || !files) return;
 
-      const now = Date.now();
-      const ttlMs = CONFIG.TEMP_FILE_TTL_SEC * 1000;
+        const now = Date.now();
+        const ttlMs = CONFIG.TEMP_FILE_TTL_SEC * 1000;
 
-      for (const file of files) {
-        const filePath = path.join(this.tempDir, file);
-        fs.stat(filePath, (statErr, stats) => {
-          if (statErr) return;
-          if (now - stats.mtimeMs > ttlMs) {
-            fs.unlink(filePath, () => {});
-          }
-        });
-      }
-    });
+        for (const file of files) {
+          const filePath = path.join(this.tempDir, file);
+          fs.stat(filePath, (statErr, stats) => {
+            if (statErr || !stats) return;
+            if (now - stats.mtimeMs > ttlMs) {
+              fs.unlink(filePath, () => {});
+            }
+          });
+        }
+      });
+    } catch {
+      // Ignore cleanup errors
+    }
   }
 
   public getTempFilePath(filename: string): string {
+    this.ensureTempDir();
     return path.join(this.tempDir, path.basename(filename));
   }
 }

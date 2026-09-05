@@ -1,7 +1,10 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import os from 'os';
 
 dotenv.config();
+
+const isVercel = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
 
 export const CONFIG = {
   PORT: process.env.PORT ? parseInt(process.env.PORT, 10) : 5000,
@@ -35,5 +38,7 @@ export const CONFIG = {
   ],
 
   // Storage path
-  TEMP_DIR: path.join(process.cwd(), 'temp_downloads'),
+  TEMP_DIR: isVercel
+    ? path.join(os.tmpdir(), 'temp_downloads')
+    : path.join(process.cwd(), 'temp_downloads'),
 };
