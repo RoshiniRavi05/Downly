@@ -31,70 +31,74 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
 
   const handleDownloadFile = async (type: 'video' | 'audio' = 'video') => {
     setDownloading(true);
-    setDownloadStatus(type === 'video' ? 'Converting & preparing video download...' : 'Extracting & preparing MP3 audio...');
+    setDownloadStatus(type === 'video' ? 'Connecting to secure stream...' : 'Extracting MP3 audio stream...');
 
     const cleanTitle = (media?.title || 'media').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().slice(0, 40) || 'media';
     const ext = type === 'audio' ? 'mp3' : 'mp4';
     const filename = `Downly_${cleanTitle}.${ext}`;
 
     const originalUrl = media?.originalUrl || (isYouTube ? `https://www.youtube.com/watch?v=${videoId}` : `https://www.instagram.com/p/${videoId}/`);
-    const format = type === 'audio' ? 'mp3' : '720';
+    const formatId = type === 'audio' ? `${media?.id || 'media'}-audio-mp3` : `${media?.id || 'media'}-720p`;
 
     try {
-      // 1. Fetch from high-speed converter engine for the EXACT video
-      const startUrl = `https://loader.to/ajax/download.php?button=1&start=1&end=1&format=${format}&url=${encodeURIComponent(originalUrl)}`;
-      const startRes = await fetch(startUrl);
+      // 1. Obtain a signed download token
+      const tokenRes = await fetch('/api/download/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mediaId: media?.id || 'media',
+          formatId,
+          platform: media?.platform || 'youtube',
+          originalUrl,
+        }),
+      });
 
-      let downloadFileUrl: string | null = null;
+      let finalStreamUrl = downloadUrl;
 
-      if (startRes.ok) {
-        const startData = await startRes.json();
-        if (startData && startData.id) {
-          const taskId = startData.id;
-          setDownloadStatus('Downloading media file to your device...');
-
-          for (let i = 0; i < 8; i++) {
-            await new Promise((r) => setTimeout(r, 1200));
-            const progRes = await fetch(`https://loader.to/ajax/progress.php?id=${taskId}`);
-            if (progRes.ok) {
-              const progData = await progRes.json();
-              if (progData.success === 1 && progData.download_url) {
-                downloadFileUrl = progData.download_url;
-                break;
-              }
-            }
-          }
+      if (tokenRes.ok) {
+        const tokenData = await tokenRes.json();
+        if (tokenData.success && tokenData.streamUrl) {
+          finalStreamUrl = tokenData.streamUrl;
         }
       }
 
-      const finalUrl = downloadFileUrl || downloadUrl || originalUrl;
+      if (!finalStreamUrl) {
+        throw new Error('Could not generate download stream URL');
+      }
 
-      // 2. Trigger native file download
+      setDownloadStatus('Saving file to your Downloads folder...');
+
+      // 2. Trigger direct device download via anchor click
       const link = document.createElement('a');
-      link.href = finalUrl;
-      link.download = filename;
+      link.href = finalStreamUrl;
+      link.setAttribute('download', filename);
+      link.target = '_self';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
-      setDownloadStatus('Downloaded to your device!');
+      setDownloadStatus('Download started! Check your downloads.');
       setTimeout(() => {
         setDownloading(false);
         setDownloadStatus(null);
-      }, 3500);
+      }, 4000);
 
-    } catch (err) {
-      console.warn('[Downly] Download stream fallback:', err);
+    } catch (err: any) {
+      console.warn('[Downly] Download stream error:', err);
+      setDownloadStatus('Retrying direct download...');
+      
       if (downloadUrl) {
         const link = document.createElement('a');
         link.href = downloadUrl;
-        link.download = filename;
+        link.setAttribute('download', filename);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
       }
-      setDownloading(false);
-      setDownloadStatus(null);
+      setTimeout(() => {
+        setDownloading(false);
+        setDownloadStatus(null);
+      }, 2500);
     }
   };
 

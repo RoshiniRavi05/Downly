@@ -386,10 +386,23 @@ export function App() {
       }
 
       setAppState('downloading');
+      setDownloadUrl(data.streamUrl);
 
-      // Short delay for realistic stream readiness state
+      // Automatically trigger direct device file download
+      const cleanTitle = (media.title || 'media').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().slice(0, 40) || 'media';
+      const isAudio = selectedFormatId.includes('audio') || selectedFormatId.includes('mp3');
+      const ext = isAudio ? 'mp3' : 'mp4';
+      const filename = `Downly_${cleanTitle}.${ext}`;
+
+      const link = document.createElement('a');
+      link.href = data.streamUrl;
+      link.setAttribute('download', filename);
+      link.target = '_self';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
       setTimeout(() => {
-        setDownloadUrl(data.streamUrl);
         setAppState('completed');
       }, 1200);
 
