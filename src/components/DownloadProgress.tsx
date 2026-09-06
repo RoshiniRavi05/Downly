@@ -79,9 +79,16 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
           const streamRes = await fetch(finalStreamUrl);
           if (streamRes.ok) {
             const contentType = streamRes.headers.get('content-type') || '';
-            if (!contentType.includes('application/json')) {
-              streamBlob = await streamRes.blob();
-              break;
+            if (
+              !contentType.includes('application/json') &&
+              !contentType.includes('text/html') &&
+              !contentType.includes('text/plain')
+            ) {
+              const blob = await streamRes.blob();
+              if (blob.size > 10000) {
+                streamBlob = blob;
+                break;
+              }
             }
           }
           if (attempts < maxAttempts) {

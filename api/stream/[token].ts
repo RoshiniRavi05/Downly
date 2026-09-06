@@ -161,7 +161,19 @@ function streamFileToClient(url: string, res: any, filename: string, isAudio: bo
       });
     }
 
-    const contentType = streamRes.headers['content-type'] || (isAudio ? 'audio/mpeg' : 'video/mp4');
+    const upstreamContentType = streamRes.headers['content-type'] || '';
+
+    // CRITICAL SECURITY & FORMAT PROTECTION: If upstream returns HTML text or JSON error, DO NOT pipe as video!
+    if (upstreamContentType.includes('text/html') || upstreamContentType.includes('application/json')) {
+      console.warn(`[Downly Stream Warning] Upstream returned text/html or json instead of binary media: ${upstreamContentType}`);
+      return res.status(502).json({
+        success: false,
+        code: 'INVALID_MEDIA_STREAM',
+        message: 'Upstream server returned an error response instead of media bytes. Please try again.',
+      });
+    }
+
+    const contentType = upstreamContentType || (isAudio ? 'audio/mpeg' : 'video/mp4');
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
     res.setHeader('Cache-Control', 'public, max-age=3600');
