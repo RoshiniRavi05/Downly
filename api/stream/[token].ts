@@ -1,149 +1,109 @@
 import crypto from 'crypto';
 import https from 'https';
 import http from 'http';
+import ytdlPackage from '@distube/ytdl-core';
 
+const ytdl: typeof import('@distube/ytdl-core') = (ytdlPackage as any).default || ytdlPackage;
 const TOKEN_SECRET = process.env.TOKEN_SECRET || 'downly_secret_token_key_change_in_production_987654321';
 
-async function resolveExactMediaDownload(originalUrl: string, formatId: string): Promise<string | null> {
-  const isAudio = formatId.includes('audio');
-  const format = isAudio ? 'mp3' : formatId.includes('1080') ? '1080' : formatId.includes('720') ? '720' : '480';
+async function resolveDirectMediaStream(originalUrl: string, formatId: string, platform: string): Promise<string | null> {
+  const isAudio = formatId.includes('audio') || formatId.includes('mp3');
 
-  // 1. Cobalt API Cluster (Multiple instances)
-  const cobaltHosts = [
-    'https://api.cobalt.tools',
-    'https://co.wuk.sh/api/json',
-    'https://cobalt-api.kwiatekm.pl',
-    'https://api.hyper.lol',
-    'https://cobalt.tools/api/json',
-  ];
-
-  for (const host of cobaltHosts) {
+  // 1. YouTube Direct Resolution via @distube/ytdl-core (Pure JS, Fast <1s)
+  if (platform === 'youtube' || originalUrl.includes('youtube.com') || originalUrl.includes('youtu.be')) {
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4000);
-
-      const response = await fetch(host, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
+      const info = await ytdl.getInfo(originalUrl, {
+        requestOptions: {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          },
         },
-        body: JSON.stringify({
-          url: originalUrl,
-          downloadMode: isAudio ? 'audio' : 'auto',
-          videoQuality: format,
-          audioFormat: 'mp3',
-        }),
-        signal: controller.signal,
       });
-      clearTimeout(timeout);
 
-      if (response.ok) {
-        const data: any = await response.json();
-        if (data.url) return data.url;
-        if (data.stream) return data.stream;
+      if (info && info.formats && info.formats.length > 0) {
+        if (isAudio) {
+          const audioFormat = ytdl.chooseFormat(info.formats, { quality: 'highestaudio', filter: 'audioonly' });
+          if (audioFormat && audioFormat.url) return audioFormat.url;
+        }
+
+        // Try format with both audio and video (e.g. 720p/360p mp4)
+        const combinedFormat = info.formats.find(
+          (f) => f.hasVideo && f.hasAudio && f.container === 'mp4' && (formatId.includes('720') ? f.qualityLabel?.includes('720') : true)
+        ) || info.formats.find((f) => f.hasVideo && f.hasAudio)
+          || info.formats[0];
+
+        if (combinedFormat && combinedFormat.url) {
+          return combinedFormat.url;
+        }
       }
-    } catch {
-      continue;
+    } catch (ytdlErr) {
+      console.warn('[Downly] ytdl-core direct extraction warning:', ytdlErr);
     }
   }
 
-  // 2. Piped API Stream cluster
+  // 2. Instagram Direct Extraction
+  if (platform === 'instagram' || originalUrl.includes('instagram.com')) {
+    try {
+      const igRes = await fetch(originalUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      });
+      if (igRes.ok) {
+        const html = await igRes.text();
+        const videoMatch = html.match(/<meta property="og:video" content="([^"]+)"/i)
+          || html.match(/"video_url":"([^"]+)"/i);
+        if (videoMatch && videoMatch[1]) {
+          return videoMatch[1].replace(/\\u0026/g, '&');
+        }
+      }
+    } catch (igErr) {
+      console.warn('[Downly] Instagram direct extraction warning:', igErr);
+    }
+  }
+
+  // 3. Fast Parallel Invidious / Piped Fallback (Max 2.5s total timeout)
   const ytMatch = originalUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|shorts\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
   if (ytMatch && ytMatch[1]) {
     const videoId = ytMatch[1];
-    const pipedInstances = [
-      'https://pipedapi.kavin.rocks',
-      'https://api.piped.privacydev.net',
-      'https://pipedapi.tokhmi.xyz',
-      'https://piped-api.lunar.icu',
+    const fastEndpoints = [
+      `https://pipedapi.kavin.rocks/streams/${videoId}`,
+      `https://api.piped.privacydev.net/streams/${videoId}`,
+      `https://invidious.nerdvpn.de/api/v1/videos/${videoId}`,
     ];
 
-    for (const instance of pipedInstances) {
+    const fetchPromises = fastEndpoints.map(async (ep) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 2500);
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3500);
-        const res = await fetch(`${instance}/streams/${videoId}`, { signal: controller.signal });
+        const res = await fetch(ep, { signal: controller.signal });
         clearTimeout(timeout);
-
         if (res.ok) {
           const data: any = await res.json();
-          if (isAudio && Array.isArray(data.audioStreams) && data.audioStreams.length > 0) {
-            const audio = data.audioStreams.find((s: any) => s.mimeType?.includes('audio/mp4') || s.mimeType?.includes('audio/m4a')) || data.audioStreams[0];
-            if (audio?.url) return audio.url;
+          if (isAudio && Array.isArray(data.audioStreams) && data.audioStreams[0]?.url) {
+            return data.audioStreams[0].url;
           }
-          if (Array.isArray(data.videoStreams) && data.videoStreams.length > 0) {
-            // Find mp4 with audio if available or standard video stream
-            const stream = data.videoStreams.find((s: any) => s.videoOnly === false && s.mimeType?.includes('video/mp4'))
-              || data.videoStreams.find((s: any) => s.mimeType?.includes('video/mp4'))
-              || data.videoStreams[0];
+          if (Array.isArray(data.videoStreams)) {
+            const stream = data.videoStreams.find((s: any) => s.mimeType?.includes('video/mp4')) || data.videoStreams[0];
             if (stream?.url) return stream.url;
+          }
+          if (Array.isArray(data.formatStreams) && data.formatStreams[0]?.url) {
+            return data.formatStreams[0].url;
           }
         }
       } catch {
-        continue;
+        // Ignore single endpoint error
       }
-    }
-
-    // 3. Invidious stream extraction
-    const invidiousInstances = [
-      'https://invidious.nerdvpn.de',
-      'https://inv.tux.pizza',
-      'https://vid.puffyan.us',
-    ];
-
-    for (const instance of invidiousInstances) {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3500);
-        const res = await fetch(`${instance}/api/v1/videos/${videoId}`, { signal: controller.signal });
-        clearTimeout(timeout);
-
-        if (res.ok) {
-          const data: any = await res.json();
-          if (isAudio && Array.isArray(data.formatStreams)) {
-            const audio = data.formatStreams.find((s: any) => s.type?.includes('audio')) || data.adaptiveFormats?.find((s: any) => s.type?.includes('audio'));
-            if (audio?.url) return audio.url;
-          }
-          if (Array.isArray(data.formatStreams) && data.formatStreams.length > 0) {
-            const stream = data.formatStreams.find((s: any) => s.resolution?.includes('720') || s.quality?.includes('hd720')) || data.formatStreams[0];
-            if (stream?.url) return stream.url;
-          }
-        }
-      } catch {
-        continue;
-      }
-    }
-  }
-
-  // 4. REST Conversion Engine
-  try {
-    const startUrl = `https://loader.to/ajax/download.php?button=1&start=1&end=1&format=${format}&url=${encodeURIComponent(originalUrl)}`;
-    const startRes = await fetch(startUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)',
-      },
+      throw new Error('Failed endpoint');
     });
 
-    if (startRes.ok) {
-      const startData: any = await startRes.json();
-      if (startData && startData.id) {
-        const taskId = startData.id;
-        for (let i = 0; i < 5; i++) {
-          await new Promise((r) => setTimeout(r, 1000));
-          const progRes = await fetch(`https://loader.to/ajax/progress.php?id=${taskId}`);
-          if (progRes.ok) {
-            const progData: any = await progRes.json();
-            if (progData.success === 1 && progData.download_url) {
-              return progData.download_url;
-            }
-          }
-        }
-      }
+    try {
+      const fastestUrl = await Promise.any(fetchPromises);
+      if (fastestUrl) return fastestUrl;
+    } catch {
+      // Parallel fetch failed
     }
-  } catch (err) {
-    console.warn('[Downly] Loader engine warning:', err);
   }
 
   return null;
@@ -151,7 +111,7 @@ async function resolveExactMediaDownload(originalUrl: string, formatId: string):
 
 function streamFileToClient(url: string, res: any, filename: string, isAudio: boolean, depth = 0) {
   if (depth > 6) {
-    return res.status(502).json({ success: false, message: 'Too many redirects from stream host' });
+    return res.status(502).json({ success: false, message: 'Too many stream redirects' });
   }
 
   const client = url.startsWith('https:') ? https : http;
@@ -159,22 +119,19 @@ function streamFileToClient(url: string, res: any, filename: string, isAudio: bo
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       Accept: '*/*',
-      'Accept-Encoding': 'identity',
     },
   };
 
   const req = client.get(url, options, (streamRes) => {
-    // Handle redirects (301, 302, 303, 307, 308)
+    // Follow 3xx redirects
     if (streamRes.statusCode && streamRes.statusCode >= 300 && streamRes.statusCode < 400 && streamRes.headers.location) {
       return streamFileToClient(streamRes.headers.location, res, filename, isAudio, depth + 1);
     }
 
     if (streamRes.statusCode && streamRes.statusCode >= 400) {
-      // Fallback redirect if direct pipe is rejected
       return res.redirect(302, url);
     }
 
-    // Set download attachment headers so browser directly downloads the file
     const contentType = streamRes.headers['content-type'] || (isAudio ? 'audio/mpeg' : 'video/mp4');
     res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
@@ -190,7 +147,6 @@ function streamFileToClient(url: string, res: any, filename: string, isAudio: bo
   req.on('error', (err) => {
     console.error('[Downly Stream Pipe Error]:', err);
     if (!res.headersSent) {
-      // Fallback redirect directly
       return res.redirect(302, url);
     }
   });
@@ -240,19 +196,17 @@ export default async function handler(req: any, res: any) {
     const ext = isMp3 ? 'mp3' : isAudio ? 'm4a' : 'mp4';
     const filename = `Downly_${platform}_${mediaId}.${ext}`;
 
-    // Resolve exact media download stream
-    const directStreamUrl = await resolveExactMediaDownload(targetUrl, formatId);
+    // Resolve exact stream within 1-2 seconds
+    const directStreamUrl = await resolveDirectMediaStream(targetUrl, formatId, platform);
 
     if (directStreamUrl) {
-      // Stream directly through Vercel serverless to bypass ISP blocks and trigger direct device download
       return streamFileToClient(directStreamUrl, res, filename, isAudio);
     }
 
-    // Direct conversion fallback if stream resolution took longer
     return res.status(503).json({
       success: false,
       code: 'CONVERSION_TIMEOUT',
-      message: 'Conversion is preparing, please click Download again.',
+      message: 'Stream resolution is processing. Please try clicking download again.',
     });
 
   } catch (error: any) {
@@ -264,3 +218,5 @@ export default async function handler(req: any, res: any) {
     });
   }
 }
+
+
