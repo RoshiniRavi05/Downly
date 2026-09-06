@@ -494,7 +494,7 @@ export function App() {
 
           {/* Polished Error Alert */}
           {appState === 'error' && error && (
-            <ErrorAlert error={error} onRetry={handleReset} />
+            <ErrorAlert error={error} url={url} onRetry={handleReset} />
           )}
 
           {/* Media Result Preview Card & Quality Selection */}
