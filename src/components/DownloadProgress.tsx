@@ -31,11 +31,11 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
 
   const handleDownloadFile = async (type: 'video' | 'audio' = 'video') => {
     setDownloading(true);
-    setDownloadStatus(type === 'video' ? 'Connecting to secure stream...' : 'Extracting MP3 audio stream...');
+    setDownloadStatus(type === 'video' ? 'Connecting to secure stream...' : 'Extracting audio stream...');
 
     const cleanTitle = (media?.title || 'media').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().slice(0, 40) || 'media';
     const ext = type === 'audio' ? 'mp3' : 'mp4';
-    const filename = `Downly_${cleanTitle}.${ext}`;
+    const filename = `Downly_${media?.platform || 'media'}_${cleanTitle}.${ext}`;
 
     const originalUrl = media?.originalUrl || (isYouTube ? `https://www.youtube.com/watch?v=${videoId}` : `https://www.instagram.com/p/${videoId}/`);
     const formatId = type === 'audio' ? `${media?.id || 'media'}-audio-mp3` : `${media?.id || 'media'}-720p`;
@@ -66,31 +66,76 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
         throw new Error('Could not generate download stream URL');
       }
 
-      setDownloadStatus('Saving file to your Downloads folder...');
+      setDownloadStatus('Downloading media bytes into device memory...');
 
-      // 2. Trigger direct device download via anchor click
-      const link = document.createElement('a');
-      link.href = finalStreamUrl;
-      link.setAttribute('download', filename);
-      link.target = '_self';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // 2. Fetch media stream as Blob with retry logic to avoid browser download errors
+      let streamBlob: Blob | null = null;
+      let attempts = 0;
+      const maxAttempts = 3;
 
-      setDownloadStatus('Download started! Check your downloads.');
-      setTimeout(() => {
-        setDownloading(false);
-        setDownloadStatus(null);
-      }, 4000);
+      while (attempts < maxAttempts && !streamBlob) {
+        attempts++;
+        try {
+          const streamRes = await fetch(finalStreamUrl);
+          if (streamRes.ok) {
+            const contentType = streamRes.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+              streamBlob = await streamRes.blob();
+              break;
+            }
+          }
+          if (attempts < maxAttempts) {
+            await new Promise((r) => setTimeout(r, 1200));
+          }
+        } catch {
+          if (attempts < maxAttempts) {
+            await new Promise((r) => setTimeout(r, 1200));
+          }
+        }
+      }
+
+      if (streamBlob) {
+        // Trigger clean in-memory browser download
+        const blobUrl = URL.createObjectURL(streamBlob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        setDownloadStatus('File downloaded successfully to your device!');
+        setTimeout(() => {
+          URL.revokeObjectURL(blobUrl);
+          setDownloading(false);
+          setDownloadStatus(null);
+        }, 3000);
+      } else {
+        // Direct link fallback
+        const link = document.createElement('a');
+        link.href = finalStreamUrl;
+        link.setAttribute('download', filename);
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        setDownloadStatus('Direct download triggered!');
+        setTimeout(() => {
+          setDownloading(false);
+          setDownloadStatus(null);
+        }, 3000);
+      }
 
     } catch (err: any) {
       console.warn('[Downly] Download stream error:', err);
-      setDownloadStatus('Retrying direct download...');
+      setDownloadStatus('Downloading fallback file...');
       
       if (downloadUrl) {
         const link = document.createElement('a');
         link.href = downloadUrl;
         link.setAttribute('download', filename);
+        link.target = '_blank';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -173,16 +218,14 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
                   <span>{downloading ? (downloadStatus || 'Downloading...') : 'Download Video (MP4)'}</span>
                 </button>
 
-                {isYouTube && (
-                  <button
-                    onClick={() => handleDownloadFile('audio')}
-                    disabled={downloading}
-                    className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-gradient-to-r from-accent-violet to-indigo-600 hover:opacity-95 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center space-x-2"
-                  >
-                    <Music className="w-4 h-4" />
-                    <span>Download Audio (MP3)</span>
-                  </button>
-                )}
+                <button
+                  onClick={() => handleDownloadFile('audio')}
+                  disabled={downloading}
+                  className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-gradient-to-r from-accent-violet to-indigo-600 hover:opacity-95 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center space-x-2"
+                >
+                  <Music className="w-4 h-4" />
+                  <span>Download Audio (MP3)</span>
+                </button>
               </div>
 
               {downloadStatus && (

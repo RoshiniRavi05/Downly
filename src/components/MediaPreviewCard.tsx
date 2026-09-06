@@ -103,6 +103,19 @@ export const MediaPreviewCard: React.FC<MediaPreviewCardProps> = ({
                 selectedFormatId={selectedFormatId}
                 onSelectFormat={onSelectFormat}
               />
+
+              {/* Quick Download Video CTA */}
+              {selectedFormatId && !selectedFormatId.includes('audio') && (
+                <div className="mt-4 pt-2">
+                  <button
+                    onClick={onDownload}
+                    className="w-full py-4 px-6 rounded-xl bg-gradient-to-r from-accent-violet via-indigo-600 to-accent-blue hover:from-accent-violet/90 hover:to-accent-blue/90 text-white font-extrabold text-base shadow-glow-violet transition-all transform active:scale-95 flex items-center justify-center space-x-2.5"
+                  >
+                    <Video className="w-5 h-5" />
+                    <span>Download Selected Video (MP4)</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
