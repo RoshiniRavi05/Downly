@@ -63,21 +63,43 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string, p
     }
   }
 
-  // 3. Fast Parallel Invidious / Piped / Mirror Fallbacks (Max 4.5s total timeout)
+  // 3. Fast Parallel Invidious / Piped / Direct Proxy Fallbacks (Max 5s total timeout)
   const ytMatch = originalUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|shorts\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
   if (ytMatch && ytMatch[1]) {
     const videoId = ytMatch[1];
+    const itag = isAudio ? '140' : formatId.includes('720') ? '22' : '18';
+
+    // Direct proxy URLs that stream instantly without API deciphering
+    const directProxies = [
+      `https://yewtu.be/latest_version?id=${videoId}&itag=${itag}`,
+      `https://invidious.nerdvpn.de/latest_version?id=${videoId}&itag=${itag}`,
+      `https://inv.tux.pizza/latest_version?id=${videoId}&itag=${itag}`,
+    ];
+
+    for (const proxyUrl of directProxies) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        const headRes = await fetch(proxyUrl, { method: 'HEAD', signal: controller.signal });
+        clearTimeout(timeout);
+        if (headRes.ok || (headRes.status >= 300 && headRes.status < 400)) {
+          return proxyUrl;
+        }
+      } catch {
+        // Try next proxy
+      }
+    }
+
     const fastEndpoints = [
       `https://pipedapi.kavin.rocks/streams/${videoId}`,
       `https://api.piped.privacydev.net/streams/${videoId}`,
       `https://invidious.nerdvpn.de/api/v1/videos/${videoId}`,
       `https://yewtu.be/api/v1/videos/${videoId}`,
-      `https://invidious.flokinet.to/api/v1/videos/${videoId}`,
     ];
 
     const fetchPromises = fastEndpoints.map(async (ep) => {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4500);
+      const timeout = setTimeout(() => controller.abort(), 3500);
       try {
         const res = await fetch(ep, { signal: controller.signal });
         clearTimeout(timeout);

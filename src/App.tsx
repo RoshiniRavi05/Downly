@@ -434,18 +434,11 @@ export function App() {
           setAppState('completed');
         }, 1500);
       } else {
-        // Direct link fallback
-        const link = document.createElement('a');
-        link.href = data.streamUrl;
-        link.setAttribute('download', filename);
-        link.target = '_blank';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        setTimeout(() => {
-          setAppState('completed');
-        }, 1500);
+        setAppState('error');
+        setError({
+          code: 'STREAM_UNAVAILABLE',
+          message: 'The media stream is currently unavailable from the host. Please try again in a moment or check your URL.',
+        });
       }
 
     } catch (err) {
@@ -505,18 +498,6 @@ export function App() {
               onSelectFormat={(id) => setSelectedFormatId(id)}
               onDownload={handleDownload}
             />
-          )}
-
-          {/* Ready Download Button CTA when format selected */}
-          {appState === 'ready' && selectedFormatId && !selectedFormatId.includes('audio') && (
-            <div className="max-w-4xl mx-auto mb-10 text-center animate-fade-in">
-              <button
-                onClick={handleDownload}
-                className="w-full sm:w-auto px-10 py-4 rounded-xl bg-gradient-to-r from-accent-violet via-indigo-600 to-accent-blue hover:opacity-95 text-white font-extrabold text-base shadow-glow-violet transition-all transform active:scale-95"
-              >
-                Download Selected Format
-              </button>
-            </div>
           )}
 
           {/* Active Download Progress / Completed panel */}

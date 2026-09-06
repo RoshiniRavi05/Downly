@@ -111,16 +111,7 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
           setDownloadStatus(null);
         }, 3000);
       } else {
-        // Direct link fallback
-        const link = document.createElement('a');
-        link.href = finalStreamUrl;
-        link.setAttribute('download', filename);
-        link.target = '_blank';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        setDownloadStatus('Direct download triggered!');
+        setDownloadStatus('Stream currently busy. Please try again.');
         setTimeout(() => {
           setDownloading(false);
           setDownloadStatus(null);
@@ -129,21 +120,11 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
 
     } catch (err: any) {
       console.warn('[Downly] Download stream error:', err);
-      setDownloadStatus('Downloading fallback file...');
-      
-      if (downloadUrl) {
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.setAttribute('download', filename);
-        link.target = '_blank';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
+      setDownloadStatus('Download error. Please try again.');
       setTimeout(() => {
         setDownloading(false);
         setDownloadStatus(null);
-      }, 2500);
+      }, 3000);
     }
   };
 
