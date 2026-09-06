@@ -388,23 +388,65 @@ export function App() {
       setAppState('downloading');
       setDownloadUrl(data.streamUrl);
 
-      // Automatically trigger direct device file download
       const cleanTitle = (media.title || 'media').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().slice(0, 40) || 'media';
       const isAudio = selectedFormatId.includes('audio') || selectedFormatId.includes('mp3');
       const ext = isAudio ? 'mp3' : 'mp4';
       const filename = `Downly_${cleanTitle}.${ext}`;
 
-      const link = document.createElement('a');
-      link.href = data.streamUrl;
-      link.setAttribute('download', filename);
-      link.target = '_self';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // Fetch stream with retry to ensure stream readiness before browser save
+      let streamBlob: Blob | null = null;
+      let attempts = 0;
+      const maxAttempts = 3;
 
-      setTimeout(() => {
-        setAppState('completed');
-      }, 1200);
+      while (attempts < maxAttempts && !streamBlob) {
+        attempts++;
+        try {
+          const streamRes = await fetch(data.streamUrl);
+          if (streamRes.ok) {
+            const contentType = streamRes.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+              streamBlob = await streamRes.blob();
+              break;
+            }
+          }
+          if (attempts < maxAttempts) {
+            await new Promise((r) => setTimeout(r, 1200));
+          }
+        } catch {
+          if (attempts < maxAttempts) {
+            await new Promise((r) => setTimeout(r, 1200));
+          }
+        }
+      }
+
+      if (streamBlob) {
+        // Trigger clean in-memory browser device save
+        const blobUrl = URL.createObjectURL(streamBlob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        setTimeout(() => {
+          URL.revokeObjectURL(blobUrl);
+          setAppState('completed');
+        }, 1500);
+      } else {
+        // Direct link fallback
+        const link = document.createElement('a');
+        link.href = data.streamUrl;
+        link.setAttribute('download', filename);
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        setTimeout(() => {
+          setAppState('completed');
+        }, 1500);
+      }
 
     } catch (err) {
       setAppState('error');

@@ -63,7 +63,7 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string, p
     }
   }
 
-  // 3. Fast Parallel Invidious / Piped Fallback (Max 2.5s total timeout)
+  // 3. Fast Parallel Invidious / Piped / Mirror Fallbacks (Max 4.5s total timeout)
   const ytMatch = originalUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|shorts\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
   if (ytMatch && ytMatch[1]) {
     const videoId = ytMatch[1];
@@ -71,11 +71,13 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string, p
       `https://pipedapi.kavin.rocks/streams/${videoId}`,
       `https://api.piped.privacydev.net/streams/${videoId}`,
       `https://invidious.nerdvpn.de/api/v1/videos/${videoId}`,
+      `https://yewtu.be/api/v1/videos/${videoId}`,
+      `https://invidious.flokinet.to/api/v1/videos/${videoId}`,
     ];
 
     const fetchPromises = fastEndpoints.map(async (ep) => {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 2500);
+      const timeout = setTimeout(() => controller.abort(), 4500);
       try {
         const res = await fetch(ep, { signal: controller.signal });
         clearTimeout(timeout);
@@ -129,7 +131,12 @@ function streamFileToClient(url: string, res: any, filename: string, isAudio: bo
     }
 
     if (streamRes.statusCode && streamRes.statusCode >= 400) {
-      return res.redirect(302, url);
+      console.warn(`[Downly Stream Warning] Upstream returned status ${streamRes.statusCode}`);
+      return res.status(502).json({
+        success: false,
+        code: 'STREAM_FETCH_FAILED',
+        message: 'Unable to stream media file from upstream host. Please try again.',
+      });
     }
 
     const contentType = streamRes.headers['content-type'] || (isAudio ? 'audio/mpeg' : 'video/mp4');
@@ -147,7 +154,11 @@ function streamFileToClient(url: string, res: any, filename: string, isAudio: bo
   req.on('error', (err) => {
     console.error('[Downly Stream Pipe Error]:', err);
     if (!res.headersSent) {
-      return res.redirect(302, url);
+      return res.status(502).json({
+        success: false,
+        code: 'STREAM_PIPE_ERROR',
+        message: 'Connection failed while piping media stream.',
+      });
     }
   });
 }
