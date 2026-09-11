@@ -454,22 +454,12 @@ export function App() {
           URL.revokeObjectURL(blobUrl);
           setAppState('completed');
         }, 1500);
-      } else if (lastErrorDetails) {
+      } else {
         setAppState('error');
         setError({
-          code: lastErrorDetails.code || 'STREAM_UNAVAILABLE',
-          message: lastErrorDetails.message || 'The media stream is currently unavailable from the host. Please try again or use direct saver links below.',
+          code: lastErrorDetails?.code || 'STREAM_UNAVAILABLE',
+          message: lastErrorDetails?.message || 'The upstream server took a moment to prepare the stream. Please try again or use our direct saver links below.',
         });
-      } else {
-        // Fallback: Trigger direct browser download stream link
-        const directLink = document.createElement('a');
-        directLink.href = data.streamUrl;
-        directLink.setAttribute('download', filename);
-        document.body.appendChild(directLink);
-        directLink.click();
-        document.body.removeChild(directLink);
-
-        setAppState('completed');
       }
 
     } catch (err) {

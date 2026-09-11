@@ -6,21 +6,27 @@ import { ytDlpService } from '../../server/services/ytDlpService';
 
 const ytdl: typeof import('@distube/ytdl-core') = (ytdlPackage as any).default || ytdlPackage;
 const TOKEN_SECRET = process.env.TOKEN_SECRET || 'downly_secret_token_key_change_in_production_987654321';
+const isDev = process.env.NODE_ENV !== 'production';
+
+function sanitizeFilename(filename: string): string {
+  return filename
+    .replace(/[\r\n\t]/g, ' ')
+    .replace(/[\\/:"*?<>|]/g, '_')
+    .trim();
+}
+
+function buildContentDispositionHeader(rawFilename: string): string {
+  const sanitized = sanitizeFilename(rawFilename);
+  const asciiFallback = sanitized.replace(/[^\x20-\x7E]/g, '_').replace(/"/g, '\\"');
+  const rfc5987Encoded = encodeURIComponent(sanitized);
+
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${rfc5987Encoded}`;
+}
 
 async function resolveDirectMediaStream(originalUrl: string, formatId: string, platform: string): Promise<string | null> {
   const isAudio = formatId.includes('audio') || formatId.includes('mp3');
 
-  // 1. Try ytDlpService for direct URL resolution if available
-  try {
-    const streamRes = await ytDlpService.getMediaStream(originalUrl, formatId);
-    if (streamRes && streamRes.stream) {
-      // If ytDlpService returned a direct stream, we can't return string URL, handled directly in handler
-    }
-  } catch {
-    // Fall back to direct resolvers
-  }
-
-  // 2. YouTube Direct Resolution via @distube/ytdl-core
+  // 1. YouTube Direct Resolution via @distube/ytdl-core
   if (platform === 'youtube' || originalUrl.includes('youtube.com') || originalUrl.includes('youtu.be')) {
     try {
       const info = await ytdl.getInfo(originalUrl, {
@@ -47,11 +53,11 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string, p
         }
       }
     } catch (ytdlErr) {
-      console.warn('[Downly] ytdl-core direct extraction warning:', ytdlErr);
+      if (isDev) console.warn('[Downly Stream Log] ytdl-core direct extraction warning:', ytdlErr);
     }
   }
 
-  // 3. Instagram Direct Extraction
+  // 2. Instagram Direct Extraction
   if (platform === 'instagram' || originalUrl.includes('instagram.com')) {
     try {
       const igRes = await fetch(originalUrl, {
@@ -69,11 +75,11 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string, p
         }
       }
     } catch (igErr) {
-      console.warn('[Downly] Instagram direct extraction warning:', igErr);
+      if (isDev) console.warn('[Downly Stream Log] Instagram direct extraction warning:', igErr);
     }
   }
 
-  // 4. Fast Parallel Invidious / Piped / Direct Proxy Fallbacks
+  // 3. Fast Parallel Invidious / Piped / Direct Proxy Fallbacks
   const ytMatch = originalUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|shorts\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
   if (ytMatch && ytMatch[1]) {
     const videoId = ytMatch[1];
@@ -142,9 +148,9 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string, p
   return null;
 }
 
-function streamFileToClient(url: string, res: any, filename: string, isAudio: boolean, depth = 0) {
+function streamFileToClient(url: string, res: any, filename: string, isAudio: boolean, formatId: string, depth = 0) {
   if (depth > 6) {
-    return res.status(502).json({ success: false, message: 'Too many stream redirects' });
+    return res.status(502).json({ success: false, code: 'TOO_MANY_REDIRECTS', message: 'Too many stream redirects' });
   }
 
   const client = url.startsWith('https:') ? https : http;
@@ -159,36 +165,46 @@ function streamFileToClient(url: string, res: any, filename: string, isAudio: bo
 
   const req = client.get(url, options, (streamRes) => {
     if (streamRes.statusCode && streamRes.statusCode >= 300 && streamRes.statusCode < 400 && streamRes.headers.location) {
-      return streamFileToClient(streamRes.headers.location, res, filename, isAudio, depth + 1);
+      return streamFileToClient(streamRes.headers.location, res, filename, isAudio, formatId, depth + 1);
     }
 
     if (streamRes.statusCode && streamRes.statusCode >= 400) {
-      console.warn(`[Downly Stream Warning] Upstream returned status ${streamRes.statusCode}`);
+      if (isDev) console.warn(`[Downly Stream Log] Upstream returned status ${streamRes.statusCode}`);
       return res.status(502).json({
         success: false,
-        code: 'STREAM_FETCH_FAILED',
-        message: 'Unable to stream media file from upstream host. Please try again.',
+        code: 'PROVIDER_STREAM_FAILED',
+        message: 'Unable to stream media file from upstream host.',
       });
     }
 
     const upstreamContentType = streamRes.headers['content-type'] || '';
 
+    // Security & Format Guard: Do not send HTML or JSON as media file
     if (upstreamContentType.includes('text/html') || upstreamContentType.includes('application/json')) {
-      console.warn(`[Downly Stream Warning] Upstream returned text/html or json instead of binary media: ${upstreamContentType}`);
+      if (isDev) console.warn(`[Downly Stream Log] Upstream returned non-binary text: ${upstreamContentType}`);
       return res.status(502).json({
         success: false,
         code: 'INVALID_MEDIA_STREAM',
-        message: 'Upstream server returned an error response instead of media bytes. Please try again.',
+        message: 'The media provider did not return a valid media stream.',
       });
     }
 
-    const contentType = upstreamContentType || (isAudio ? 'audio/mpeg' : 'video/mp4');
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    const isMp3 = formatId.includes('mp3');
+    const computedMime = isMp3 ? 'audio/mpeg' : isAudio ? 'audio/mp4' : 'video/mp4';
+    const finalContentType = upstreamContentType && !upstreamContentType.includes('octet-stream') ? upstreamContentType : computedMime;
+
+    const contentDisposition = buildContentDispositionHeader(filename);
+
+    res.status(200);
+    res.setHeader('Content-Type', finalContentType);
+    res.setHeader('Content-Disposition', contentDisposition);
     res.setHeader('Cache-Control', 'public, max-age=3600');
 
     if (streamRes.headers['content-length']) {
-      res.setHeader('Content-Length', streamRes.headers['content-length']);
+      const len = parseInt(streamRes.headers['content-length'], 10);
+      if (!isNaN(len) && len > 0) {
+        res.setHeader('Content-Length', len.toString());
+      }
     }
 
     streamRes.pipe(res);
@@ -202,6 +218,8 @@ function streamFileToClient(url: string, res: any, filename: string, isAudio: bo
         code: 'STREAM_PIPE_ERROR',
         message: 'Connection failed while piping media stream.',
       });
+    } else {
+      res.destroy(err);
     }
   });
 }
@@ -250,27 +268,46 @@ export default async function handler(req: any, res: any) {
     const ext = isMp3 ? 'mp3' : isAudio ? 'm4a' : 'mp4';
     const filename = `Downly_${platform}_${mediaId}.${ext}`;
 
+    if (isDev) {
+      console.log(`[Downly Stream Log] API Handler processing platform=${platform}, mediaId=${mediaId}, formatId=${formatId}`);
+    }
+
     // Try ytDlpService first for local node / server environments
     try {
       const result = await ytDlpService.getMediaStream(targetUrl, formatId, `${platform}_${mediaId}`);
       if (result && result.stream) {
-        res.setHeader('Content-Type', result.mimeType || (isAudio ? 'audio/mpeg' : 'video/mp4'));
-        res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"; filename*=UTF-8''${encodeURIComponent(result.filename)}`);
+        const computedMime = isMp3 ? 'audio/mpeg' : isAudio ? 'audio/mp4' : 'video/mp4';
+        const finalMime = result.mimeType || computedMime;
+        const contentDisp = buildContentDispositionHeader(result.filename);
+
+        res.status(200);
+        res.setHeader('Content-Type', finalMime);
+        res.setHeader('Content-Disposition', contentDisp);
         res.setHeader('Cache-Control', 'public, max-age=3600');
-        if (result.contentLength) {
+        if (result.contentLength && Number.isInteger(result.contentLength) && result.contentLength > 0) {
           res.setHeader('Content-Length', result.contentLength.toString());
         }
+
+        result.stream.on('error', (err: any) => {
+          console.error('[API Stream Error] Stream failed:', err);
+          if (!res.headersSent) {
+            res.status(502).json({ success: false, code: 'PROVIDER_STREAM_FAILED', message: 'Stream failed' });
+          } else {
+            res.destroy(err);
+          }
+        });
+
         return result.stream.pipe(res);
       }
     } catch (ytErr) {
-      console.warn('[API Stream] ytDlpService stream failed, using fallback direct stream:', ytErr);
+      if (isDev) console.warn('[API Stream Log] ytDlpService stream failed, fallback to direct stream:', ytErr);
     }
 
-    // Resolve exact stream within 1-2 seconds fallback
+    // Resolve exact stream fallback
     const directStreamUrl = await resolveDirectMediaStream(targetUrl, formatId, platform);
 
     if (directStreamUrl) {
-      return streamFileToClient(directStreamUrl, res, filename, isAudio);
+      return streamFileToClient(directStreamUrl, res, filename, isAudio, formatId);
     }
 
     return res.status(503).json({
