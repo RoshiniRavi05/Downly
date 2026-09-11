@@ -194,27 +194,34 @@ export class YouTubeProvider implements MediaProvider {
     const videoId = mediaId || this.extractVideoId(originalUrl)?.id || 'media';
     const targetUrl = originalUrl || `https://www.youtube.com/watch?v=${videoId}`;
 
-    // Try pure JS ytdl streaming first
+    // 1. Primary: Use ytDlpService for reliable high-res & DASH stream extraction
     try {
-      const isAudio = formatId.includes('audio');
-      const isMp3 = formatId.includes('mp3');
-      const ext = isMp3 ? 'mp3' : isAudio ? 'm4a' : 'mp4';
-      const mime = isMp3 ? 'audio/mpeg' : isAudio ? 'audio/mp4' : 'video/mp4';
-
-      const stream = ytdl(targetUrl, {
-        quality: isAudio ? 'highestaudio' : 'highestvideo',
-        filter: isAudio ? 'audioonly' : 'videoandaudio',
-      });
-
-      return {
-        stream: stream as unknown as NodeJS.ReadableStream,
-        filename: `Downly_YouTube_${videoId}_${formatId}.${ext}`,
-        mimeType: mime,
-      };
-    } catch (ytdlStreamErr) {
-      console.warn('[YouTubeProvider] ytdl stream failed, falling back to ytDlpService:', ytdlStreamErr);
-      return ytDlpService.getMediaStream(targetUrl, formatId, `YouTube_${videoId}`);
+      return await ytDlpService.getMediaStream(targetUrl, formatId, `YouTube_${videoId}`);
+    } catch (ytDlpErr) {
+      console.warn('[YouTubeProvider] ytDlpService stream failed, falling back to ytdl-core:', ytDlpErr);
     }
+
+    // 2. Fallback: Pure JS ytdl-core with safe error event trapping
+    const isAudio = formatId.includes('audio');
+    const isMp3 = formatId.includes('mp3');
+    const ext = isMp3 ? 'mp3' : isAudio ? 'm4a' : 'mp4';
+    const mime = isMp3 ? 'audio/mpeg' : isAudio ? 'audio/mp4' : 'video/mp4';
+
+    const stream = ytdl(targetUrl, {
+      quality: isAudio ? 'highestaudio' : 'highestvideo',
+      filter: isAudio ? 'audioonly' : 'videoandaudio',
+      requestOptions: {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        },
+      },
+    });
+
+    return {
+      stream: stream as unknown as NodeJS.ReadableStream,
+      filename: `Downly_YouTube_${videoId}_${formatId}.${ext}`,
+      mimeType: mime,
+    };
   }
 
   private fetchJson(url: string): Promise<any> {

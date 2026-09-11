@@ -39,12 +39,27 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({ error, url, onRetry }) =
           message: "You're sending requests too quickly. Please wait a minute and try again.",
           color: "text-amber-400 border-amber-500/30 bg-amber-500/10",
         };
+      case 'STREAM_UNAVAILABLE':
+      case 'CONVERSION_TIMEOUT':
+        return {
+          icon: Server,
+          title: "Stream Temporarily Busy",
+          message: error.message || "The upstream server took a moment to prepare the stream. Please click 'Try Again' or use the direct saver links below.",
+          color: "text-amber-400 border-amber-500/30 bg-amber-500/10",
+        };
+      case 'EXTRACTION_FAILED':
+        return {
+          icon: AlertTriangle,
+          title: "Media Extraction Failed",
+          message: error.message || "We couldn't extract media details from this link. Verify the video is publicly accessible and try again.",
+          color: "text-rose-400 border-rose-500/30 bg-rose-500/10",
+        };
       default:
         return {
           icon: Server,
-          title: "Host Stream Restricted",
-          message: error.message || "This content is protected by YouTube/Instagram. Use our Direct Saver Backup below to download immediately.",
-          color: "text-rose-400 border-rose-500/30 bg-rose-500/10",
+          title: "Stream Saver Notice",
+          message: error.message || "This media stream is protected or restricted. Use our Direct Saver Backup below to download immediately.",
+          color: "text-indigo-400 border-indigo-500/30 bg-indigo-500/10",
         };
     }
   };

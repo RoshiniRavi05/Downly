@@ -45,23 +45,39 @@ class YtDlpService {
   private ensureBinary(): void {
     const isWin = process.platform === 'win32';
     const targetFile = isWin ? BIN_PATH_WIN : BIN_PATH_NIX;
+    const targetFfmpeg = isWin ? path.join(BASE_BIN_DIR, 'ffmpeg.exe') : path.join(BASE_BIN_DIR, 'ffmpeg');
+
+    if (!fs.existsSync(BASE_BIN_DIR)) {
+      try {
+        fs.mkdirSync(BASE_BIN_DIR, { recursive: true });
+      } catch {
+        // Ignore
+      }
+    }
 
     if (!fs.existsSync(targetFile)) {
       try {
-        if (!fs.existsSync(BASE_BIN_DIR)) {
-          fs.mkdirSync(BASE_BIN_DIR, { recursive: true });
-        }
         const downloadUrl = isWin
           ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
           : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
 
-        console.log(`[YtDlpService] Downloading binary to ${targetFile}...`);
+        console.log(`[YtDlpService] Downloading yt-dlp binary to ${targetFile}...`);
         const cmd = isWin
           ? `powershell -Command "Invoke-WebRequest -Uri '${downloadUrl}' -OutFile '${targetFile}'"`
           : `curl -L "${downloadUrl}" -o "${targetFile}" && chmod +x "${targetFile}"`;
-        execSync(cmd);
+        execSync(cmd, { timeout: 30000 });
       } catch (err) {
-        console.error('[YtDlpService] Failed to auto-download binary:', err);
+        console.error('[YtDlpService] Failed to auto-download yt-dlp binary:', err);
+      }
+    }
+
+    if (!fs.existsSync(targetFfmpeg) && !isWin) {
+      try {
+        console.log(`[YtDlpService] Downloading Linux ffmpeg binary to ${targetFfmpeg}...`);
+        const cmd = `curl -L "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v4.4.1/ffmpeg-4.4.1-linux-64.tar.gz" | tar -xz -C "${BASE_BIN_DIR}" && chmod +x "${targetFfmpeg}"`;
+        execSync(cmd, { timeout: 30000 });
+      } catch (err) {
+        console.warn('[YtDlpService] Linux ffmpeg auto-download notice:', err);
       }
     }
   }
@@ -83,14 +99,33 @@ class YtDlpService {
     return isWin ? 'yt-dlp.exe' : 'yt-dlp';
   }
 
+  private get ffmpegDir(): string {
+    this.ensureBinary();
+    const isWin = process.platform === 'win32';
+    const ffmpegWin = path.join(BASE_BIN_DIR, 'ffmpeg.exe');
+    const ffmpegNix = path.join(BASE_BIN_DIR, 'ffmpeg');
+
+    if (fs.existsSync(ffmpegWin) || fs.existsSync(ffmpegNix)) {
+      return BASE_BIN_DIR;
+    }
+    return '';
+  }
+
   /**
    * Retrieves full video/audio JSON metadata using yt-dlp.
    */
   async getVideoInfo(url: string): Promise<YtDlpInfo> {
     return new Promise((resolve, reject) => {
+      const args = ['-j', '--no-warnings', '--no-playlist'];
+      const ffDir = this.ffmpegDir;
+      if (ffDir) {
+        args.push('--ffmpeg-location', ffDir);
+      }
+      args.push(url);
+
       execFile(
         this.binaryPath,
-        ['-j', '--no-warnings', '--no-playlist', url],
+        args,
         { maxBuffer: 10 * 1024 * 1024 },
         (error, stdout, stderr) => {
           if (error) {
@@ -122,49 +157,62 @@ class YtDlpService {
     const extension = isMp3 ? 'mp3' : isAudio ? 'm4a' : 'mp4';
     const mimeType = isMp3 ? 'audio/mpeg' : isAudio ? 'audio/mp4' : 'video/mp4';
 
-    let ytDlpFormatSelector = 'b[ext=mp4]/b/best';
+    let ytDlpFormatSelector = 'bestvideo+bestaudio/best';
     if (isMp3 || isAudio) {
       ytDlpFormatSelector = 'bestaudio/best';
     } else if (formatId.includes('1080p')) {
-      ytDlpFormatSelector = 'b[height<=1080][ext=mp4]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/b/best';
+      ytDlpFormatSelector = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
     } else if (formatId.includes('720p')) {
-      ytDlpFormatSelector = 'b[height<=720][ext=mp4]/bestvideo[height<=720]+bestaudio/best[height<=720]/b/best';
+      ytDlpFormatSelector = 'bestvideo[height<=720]+bestaudio/best[height<=720]/best';
     } else if (formatId.includes('480p')) {
-      ytDlpFormatSelector = 'b[height<=480][ext=mp4]/bestvideo[height<=480]+bestaudio/best[height<=480]/b/best';
+      ytDlpFormatSelector = 'bestvideo[height<=480]+bestaudio/best[height<=480]/best';
     } else if (formatId.includes('360p')) {
-      ytDlpFormatSelector = 'b[height<=360][ext=mp4]/bestvideo[height<=360]+bestaudio/best[height<=360]/b/best';
+      ytDlpFormatSelector = 'bestvideo[height<=360]+bestaudio/best[height<=360]/best';
     }
 
     const sanitizedTitle = fallbackTitle.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 50);
     const filename = `Downly_${sanitizedTitle}_${formatId}.${extension}`;
 
-    // Try fetching direct HTTP stream URL first (fastest)
-    try {
-      const streamUrls = await this.getDirectUrl(url, ytDlpFormatSelector);
-      if (streamUrls && streamUrls.length > 0) {
-        const directUrl = streamUrls[0];
-        const remote = await fetchRemoteStream(directUrl);
-        return {
-          stream: remote.stream,
-          filename,
-          mimeType: remote.contentType || mimeType,
-          contentLength: remote.contentLength,
-        };
+    // For single audio streams or non-DASH formats, try fetching direct stream URL first
+    if (isAudio || isMp3) {
+      try {
+        const streamUrls = await this.getDirectUrl(url, ytDlpFormatSelector);
+        if (streamUrls && streamUrls.length > 0) {
+          const directUrl = streamUrls[0];
+          const remote = await fetchRemoteStream(directUrl);
+          return {
+            stream: remote.stream,
+            filename,
+            mimeType: remote.contentType || mimeType,
+            contentLength: remote.contentLength,
+          };
+        }
+      } catch (err) {
+        console.warn('[YtDlpService] Direct URL fetch failed, falling back to stdout process piping:', err);
       }
-    } catch (err) {
-      console.warn('[YtDlpService] Direct URL fetch failed, falling back to stdout process piping:', err);
     }
 
-    // Fallback: Spawn yt-dlp streaming to stdout
-    const child = spawn(this.binaryPath, [
+    // Spawn yt-dlp with ffmpeg stream merging piped directly to stdout
+    const spawnArgs = [
       '-o',
       '-',
       '-f',
       ytDlpFormatSelector,
       '--no-playlist',
       '--no-warnings',
-      url,
-    ]);
+      '--no-check-certificates',
+      '--geo-bypass',
+      '--user-agent',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    ];
+
+    const ffDir = this.ffmpegDir;
+    if (ffDir) {
+      spawnArgs.push('--ffmpeg-location', ffDir);
+    }
+    spawnArgs.push(url);
+
+    const child = spawn(this.binaryPath, spawnArgs);
 
     return {
       stream: child.stdout as unknown as Readable,
@@ -175,15 +223,28 @@ class YtDlpService {
 
   private getDirectUrl(url: string, formatSelector: string): Promise<string[]> {
     return new Promise((resolve, reject) => {
-      execFile(
-        this.binaryPath,
-        ['-g', '-f', formatSelector, '--no-playlist', '--no-warnings', url],
-        (error, stdout) => {
-          if (error) return reject(error);
-          const urls = stdout.trim().split('\n').filter(Boolean);
-          resolve(urls);
-        }
-      );
+      const args = [
+        '-g',
+        '-f',
+        formatSelector,
+        '--no-playlist',
+        '--no-warnings',
+        '--no-check-certificates',
+        '--geo-bypass',
+        '--user-agent',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      ];
+      const ffDir = this.ffmpegDir;
+      if (ffDir) {
+        args.push('--ffmpeg-location', ffDir);
+      }
+      args.push(url);
+
+      execFile(this.binaryPath, args, (error, stdout) => {
+        if (error) return reject(error);
+        const urls = stdout.trim().split('\n').filter(Boolean);
+        resolve(urls);
+      });
     });
   }
 }

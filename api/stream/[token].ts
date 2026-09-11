@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import https from 'https';
 import http from 'http';
 import ytdlPackage from '@distube/ytdl-core';
+import { ytDlpService } from '../../server/services/ytDlpService';
 
 const ytdl: typeof import('@distube/ytdl-core') = (ytdlPackage as any).default || ytdlPackage;
 const TOKEN_SECRET = process.env.TOKEN_SECRET || 'downly_secret_token_key_change_in_production_987654321';
@@ -9,7 +10,17 @@ const TOKEN_SECRET = process.env.TOKEN_SECRET || 'downly_secret_token_key_change
 async function resolveDirectMediaStream(originalUrl: string, formatId: string, platform: string): Promise<string | null> {
   const isAudio = formatId.includes('audio') || formatId.includes('mp3');
 
-  // 1. YouTube Direct Resolution via @distube/ytdl-core (Pure JS, Fast <1s)
+  // 1. Try ytDlpService for direct URL resolution if available
+  try {
+    const streamRes = await ytDlpService.getMediaStream(originalUrl, formatId);
+    if (streamRes && streamRes.stream) {
+      // If ytDlpService returned a direct stream, we can't return string URL, handled directly in handler
+    }
+  } catch {
+    // Fall back to direct resolvers
+  }
+
+  // 2. YouTube Direct Resolution via @distube/ytdl-core
   if (platform === 'youtube' || originalUrl.includes('youtube.com') || originalUrl.includes('youtu.be')) {
     try {
       const info = await ytdl.getInfo(originalUrl, {
@@ -26,7 +37,6 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string, p
           if (audioFormat && audioFormat.url) return audioFormat.url;
         }
 
-        // Try format with both audio and video (e.g. 720p/360p mp4)
         const combinedFormat = info.formats.find(
           (f) => f.hasVideo && f.hasAudio && f.container === 'mp4' && (formatId.includes('720') ? f.qualityLabel?.includes('720') : true)
         ) || info.formats.find((f) => f.hasVideo && f.hasAudio)
@@ -41,7 +51,7 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string, p
     }
   }
 
-  // 2. Instagram Direct Extraction
+  // 3. Instagram Direct Extraction
   if (platform === 'instagram' || originalUrl.includes('instagram.com')) {
     try {
       const igRes = await fetch(originalUrl, {
@@ -63,13 +73,12 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string, p
     }
   }
 
-  // 3. Fast Parallel Invidious / Piped / Direct Proxy Fallbacks (Max 5s total timeout)
+  // 4. Fast Parallel Invidious / Piped / Direct Proxy Fallbacks
   const ytMatch = originalUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|shorts\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
   if (ytMatch && ytMatch[1]) {
     const videoId = ytMatch[1];
     const itag = isAudio ? '140' : formatId.includes('720') ? '22' : '18';
 
-    // Direct proxy URLs that stream instantly without API deciphering
     const directProxies = [
       `https://yewtu.be/latest_version?id=${videoId}&itag=${itag}`,
       `https://invidious.nerdvpn.de/latest_version?id=${videoId}&itag=${itag}`,
@@ -86,7 +95,7 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string, p
           return proxyUrl;
         }
       } catch {
-        // Try next proxy
+        // Try next
       }
     }
 
@@ -117,7 +126,7 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string, p
           }
         }
       } catch {
-        // Ignore single endpoint error
+        // Ignore
       }
       throw new Error('Failed endpoint');
     });
@@ -126,7 +135,7 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string, p
       const fastestUrl = await Promise.any(fetchPromises);
       if (fastestUrl) return fastestUrl;
     } catch {
-      // Parallel fetch failed
+      // Ignore
     }
   }
 
@@ -143,11 +152,12 @@ function streamFileToClient(url: string, res: any, filename: string, isAudio: bo
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       Accept: '*/*',
+      'Accept-Encoding': 'identity',
+      Referer: 'https://www.youtube.com/',
     },
   };
 
   const req = client.get(url, options, (streamRes) => {
-    // Follow 3xx redirects
     if (streamRes.statusCode && streamRes.statusCode >= 300 && streamRes.statusCode < 400 && streamRes.headers.location) {
       return streamFileToClient(streamRes.headers.location, res, filename, isAudio, depth + 1);
     }
@@ -163,7 +173,6 @@ function streamFileToClient(url: string, res: any, filename: string, isAudio: bo
 
     const upstreamContentType = streamRes.headers['content-type'] || '';
 
-    // CRITICAL SECURITY & FORMAT PROTECTION: If upstream returns HTML text or JSON error, DO NOT pipe as video!
     if (upstreamContentType.includes('text/html') || upstreamContentType.includes('application/json')) {
       console.warn(`[Downly Stream Warning] Upstream returned text/html or json instead of binary media: ${upstreamContentType}`);
       return res.status(502).json({
@@ -241,7 +250,23 @@ export default async function handler(req: any, res: any) {
     const ext = isMp3 ? 'mp3' : isAudio ? 'm4a' : 'mp4';
     const filename = `Downly_${platform}_${mediaId}.${ext}`;
 
-    // Resolve exact stream within 1-2 seconds
+    // Try ytDlpService first for local node / server environments
+    try {
+      const result = await ytDlpService.getMediaStream(targetUrl, formatId, `${platform}_${mediaId}`);
+      if (result && result.stream) {
+        res.setHeader('Content-Type', result.mimeType || (isAudio ? 'audio/mpeg' : 'video/mp4'));
+        res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"; filename*=UTF-8''${encodeURIComponent(result.filename)}`);
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        if (result.contentLength) {
+          res.setHeader('Content-Length', result.contentLength.toString());
+        }
+        return result.stream.pipe(res);
+      }
+    } catch (ytErr) {
+      console.warn('[API Stream] ytDlpService stream failed, using fallback direct stream:', ytErr);
+    }
+
+    // Resolve exact stream within 1-2 seconds fallback
     const directStreamUrl = await resolveDirectMediaStream(targetUrl, formatId, platform);
 
     if (directStreamUrl) {

@@ -397,31 +397,45 @@ export function App() {
       let streamBlob: Blob | null = null;
       let attempts = 0;
       const maxAttempts = 3;
+      let lastErrorDetails: { code?: string; message?: string } | null = null;
 
       while (attempts < maxAttempts && !streamBlob) {
         attempts++;
         try {
           const streamRes = await fetch(data.streamUrl);
+          const contentType = streamRes.headers.get('content-type') || '';
+
           if (streamRes.ok) {
-            const contentType = streamRes.headers.get('content-type') || '';
             if (
               !contentType.includes('application/json') &&
               !contentType.includes('text/html') &&
               !contentType.includes('text/plain')
             ) {
               const blob = await streamRes.blob();
-              if (blob.size > 10000) {
+              if (blob.size > 1000) {
                 streamBlob = blob;
                 break;
               }
             }
+          } else {
+            try {
+              const errJson = await streamRes.json();
+              if (errJson) {
+                lastErrorDetails = {
+                  code: errJson.code || 'STREAM_UNAVAILABLE',
+                  message: errJson.message,
+                };
+              }
+            } catch {
+              // Non-JSON error
+            }
           }
           if (attempts < maxAttempts) {
-            await new Promise((r) => setTimeout(r, 1200));
+            await new Promise((r) => setTimeout(r, 1000));
           }
         } catch {
           if (attempts < maxAttempts) {
-            await new Promise((r) => setTimeout(r, 1200));
+            await new Promise((r) => setTimeout(r, 1000));
           }
         }
       }
@@ -440,12 +454,22 @@ export function App() {
           URL.revokeObjectURL(blobUrl);
           setAppState('completed');
         }, 1500);
-      } else {
+      } else if (lastErrorDetails) {
         setAppState('error');
         setError({
-          code: 'STREAM_UNAVAILABLE',
-          message: 'The media stream is currently unavailable from the host. Please try again in a moment or check your URL.',
+          code: lastErrorDetails.code || 'STREAM_UNAVAILABLE',
+          message: lastErrorDetails.message || 'The media stream is currently unavailable from the host. Please try again or use direct saver links below.',
         });
+      } else {
+        // Fallback: Trigger direct browser download stream link
+        const directLink = document.createElement('a');
+        directLink.href = data.streamUrl;
+        directLink.setAttribute('download', filename);
+        document.body.appendChild(directLink);
+        directLink.click();
+        document.body.removeChild(directLink);
+
+        setAppState('completed');
       }
 
     } catch (err) {
