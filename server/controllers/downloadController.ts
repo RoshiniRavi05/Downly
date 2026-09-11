@@ -157,7 +157,7 @@ export async function streamMediaController(req: Request, res: Response, next: N
     providerStream.on('error', (streamErr: any) => {
       console.error(`ERROR STAGE: [11] Stream initialization\nERROR CODE: PROVIDER_STREAM_FAILED\nHTTP STATUS: 502\nPROVIDER: ${provider.id}\nFORMAT: ${formatId}\nERROR MESSAGE: ${streamErr?.message}`);
       if (!isHeaderSent && !res.headersSent) {
-        return res.status(502).json({
+        res.status(502).json({
           success: false,
           code: 'PROVIDER_STREAM_FAILED',
           message: 'Upstream server stream failed before transmission started.',
