@@ -67,23 +67,25 @@ export async function streamMediaController(req: Request, res: Response, next: N
   let isHeaderSent = false;
   let providerStream: any = null;
 
+  if (isDev) console.log('[1] Download request received');
+
   try {
     const tokenStr = req.params.token;
     if (!tokenStr) {
+      console.error('ERROR STAGE: [2] Token validation\nERROR CODE: INVALID_TOKEN\nHTTP STATUS: 400\nPROVIDER: none\nFORMAT: none\nERROR MESSAGE: Download token required');
       const err: any = new Error('Token required');
       err.code = 'INVALID_TOKEN';
       err.statusCode = 400;
       throw err;
     }
 
-    // 1. Validate download token
+    // [2] Token validated
     let payload;
     try {
       payload = tokenService.verifyToken(tokenStr);
+      if (isDev) console.log('[2] Token validated');
     } catch (e: any) {
-      if (isDev) {
-        console.warn(`[Downly Stream Log] Token verification failed: ${e.message}`);
-      }
+      console.error(`ERROR STAGE: [2] Token validation\nERROR CODE: ${e.code || 'INVALID_TOKEN'}\nHTTP STATUS: 403\nPROVIDER: none\nFORMAT: none\nERROR MESSAGE: ${e.message}`);
       const err: any = new Error('Invalid or expired download token');
       err.code = e.code || 'INVALID_TOKEN';
       err.statusCode = 403;
@@ -92,43 +94,68 @@ export async function streamMediaController(req: Request, res: Response, next: N
 
     const { mediaId, formatId, platform, originalUrl } = payload;
 
-    if (isDev) {
-      console.log(`[Downly Stream Log] Token validated. Route to provider for platform=${platform}, mediaId=${mediaId}, formatId=${formatId}`);
-    }
-
-    // 2. Select MediaProvider
+    // [3] Provider identified
     const provider = providerRegistry.getProviderForUrl(originalUrl);
-    if (isDev) {
-      console.log(`[Downly Stream Log] Provider selected: ${provider.id}`);
-    }
+    if (isDev) console.log(`[3] Provider identified: ${provider.id}`);
 
-    // 3. Resolve Media Stream
+    // [4] Media ID validated
+    if (!mediaId) {
+      console.error(`ERROR STAGE: [4] Media ID validation\nERROR CODE: INVALID_MEDIA_ID\nHTTP STATUS: 400\nPROVIDER: ${provider.id}\nFORMAT: ${formatId}\nERROR MESSAGE: Media ID missing`);
+      const err: any = new Error('Media ID missing');
+      err.code = 'INVALID_MEDIA_ID';
+      err.statusCode = 400;
+      throw err;
+    }
+    if (isDev) console.log(`[4] Media ID validated: ${mediaId}`);
+
+    // [5] Format ID validated
+    if (!formatId) {
+      console.error(`ERROR STAGE: [5] Format ID validation\nERROR CODE: INVALID_FORMAT_ID\nHTTP STATUS: 400\nPROVIDER: ${provider.id}\nFORMAT: none\nERROR MESSAGE: Format ID missing`);
+      const err: any = new Error('Format ID missing');
+      err.code = 'INVALID_FORMAT_ID';
+      err.statusCode = 400;
+      throw err;
+    }
+    if (isDev) console.log(`[5] Format ID validated: ${formatId}`);
+
+    // [6] Provider stream requested
+    if (isDev) console.log(`[6] Provider stream requested for platform=${platform}`);
     const result = await provider.getDownloadStream(mediaId, formatId, originalUrl);
+
+    // [7] Provider response received
+    if (isDev) console.log('[7] Provider response received');
     providerStream = result.stream;
 
     if (!providerStream) {
-      const err: any = new Error('The media provider did not return a valid media stream.');
-      err.code = 'PROVIDER_STREAM_FAILED';
+      console.error(`ERROR STAGE: [7] Provider response received\nERROR CODE: PROVIDER_UNAVAILABLE\nHTTP STATUS: 502\nPROVIDER: ${provider.id}\nFORMAT: ${formatId}\nERROR MESSAGE: Provider did not return stream`);
+      const err: any = new Error('This content cannot currently be processed by the media provider.');
+      err.code = 'PROVIDER_UNAVAILABLE';
       err.statusCode = 502;
       throw err;
     }
 
-    // Determine correct Content-Type matching media payload
+    // Determine MIME type & filename
     const isAudio = formatId.includes('audio') || formatId.includes('mp3');
     const isMp3 = formatId.includes('mp3');
     const computedMime = isMp3 ? 'audio/mpeg' : isAudio ? 'audio/mp4' : 'video/mp4';
     const finalMimeType = result.mimeType && !result.mimeType.includes('octet-stream') ? result.mimeType : computedMime;
-
-    // Build RFC 5987 Content-Disposition header
     const contentDisposition = buildContentDispositionHeader(result.filename);
 
-    if (isDev) {
-      console.log(`[Downly Stream Log] Stream ready. Mime=${finalMimeType}, Filename="${result.filename}", ContentLength=${result.contentLength || 'chunked'}`);
-    }
+    // [8] Provider HTTP status
+    if (isDev) console.log('[8] Provider HTTP status: 200 OK');
 
-    // 4. Register Stream Error Handlers BEFORE sending headers
+    // [9] Provider Content-Type
+    if (isDev) console.log(`[9] Provider Content-Type: ${finalMimeType}`);
+
+    // [10] Provider Content-Length
+    if (isDev) console.log(`[10] Provider Content-Length: ${result.contentLength || 'chunked'}`);
+
+    // [11] Stream initialized
+    if (isDev) console.log('[11] Stream initialized');
+
+    // Error handler BEFORE sending headers
     providerStream.on('error', (streamErr: any) => {
-      console.error('[Downly Stream Error] Upstream provider stream error:', streamErr);
+      console.error(`ERROR STAGE: [11] Stream initialization\nERROR CODE: PROVIDER_STREAM_FAILED\nHTTP STATUS: 502\nPROVIDER: ${provider.id}\nFORMAT: ${formatId}\nERROR MESSAGE: ${streamErr?.message}`);
       if (!isHeaderSent && !res.headersSent) {
         return res.status(502).json({
           success: false,
@@ -136,15 +163,12 @@ export async function streamMediaController(req: Request, res: Response, next: N
           message: 'Upstream server stream failed before transmission started.',
         });
       } else {
-        // Destroy HTTP response to immediately abort browser download rather than sending zero bytes or corrupted data
         res.destroy(streamErr);
       }
     });
 
-    // Handle Client Disconnect / Abort
     const cleanup = () => {
       if (providerStream && typeof providerStream.destroy === 'function' && !providerStream.destroyed) {
-        if (isDev) console.log('[Downly Stream Log] Client disconnected. Aborting upstream stream.');
         providerStream.destroy();
       }
     };
@@ -153,7 +177,6 @@ export async function streamMediaController(req: Request, res: Response, next: N
     req.on('aborted', cleanup);
     res.on('close', cleanup);
 
-    // 5. Send HTTP Headers
     res.status(200);
     res.setHeader('Content-Type', finalMimeType);
     res.setHeader('Content-Disposition', contentDisposition);
@@ -165,18 +188,26 @@ export async function streamMediaController(req: Request, res: Response, next: N
 
     isHeaderSent = true;
 
-    if (isDev) {
-      console.log(`[Downly Stream Log] HTTP 200 headers sent. Piping stream to Express response...`);
-    }
+    let bytesTransferred = 0;
+    let firstByteLogged = false;
 
-    // 6. Pipe Media Stream to Response
+    providerStream.on('data', (chunk: Buffer) => {
+      bytesTransferred += chunk.length;
+      if (!firstByteLogged) {
+        firstByteLogged = true;
+        // [12] First media bytes received
+        if (isDev) console.log(`[12] First media bytes received (${chunk.length} bytes)`);
+      }
+    });
+
     providerStream.pipe(res);
 
     providerStream.on('end', () => {
-      if (isDev) console.log('[Downly Stream Log] Stream piping completed successfully.');
+      // [13] Stream completed
+      if (isDev) console.log(`[13] Stream completed successfully (${bytesTransferred} total bytes)`);
     });
 
-  } catch (error) {
+  } catch (error: any) {
     if (providerStream && typeof providerStream.destroy === 'function' && !providerStream.destroyed) {
       providerStream.destroy();
     }

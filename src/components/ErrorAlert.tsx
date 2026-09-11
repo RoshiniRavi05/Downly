@@ -1,6 +1,6 @@
 import React from 'react';
 import { AppError } from '../types';
-import { AlertTriangle, ShieldAlert, Lock, Clock, Server, RefreshCw, ExternalLink, Video, Music } from 'lucide-react';
+import { AlertTriangle, ShieldAlert, Lock, Clock, Server, RefreshCw } from 'lucide-react';
 
 interface ErrorAlertProps {
   error: AppError;
@@ -8,7 +8,7 @@ interface ErrorAlertProps {
   onRetry: () => void;
 }
 
-export const ErrorAlert: React.FC<ErrorAlertProps> = ({ error, url, onRetry }) => {
+export const ErrorAlert: React.FC<ErrorAlertProps> = ({ error, onRetry }) => {
   const getErrorDetails = () => {
     switch (error.code) {
       case 'INVALID_URL':
@@ -39,13 +39,13 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({ error, url, onRetry }) =
           message: "You're sending requests too quickly. Please wait a minute and try again.",
           color: "text-amber-400 border-amber-500/30 bg-amber-500/10",
         };
-      case 'STREAM_UNAVAILABLE':
-      case 'CONVERSION_TIMEOUT':
+      case 'PROVIDER_UNAVAILABLE':
+      case 'PROVIDER_STREAM_FAILED':
         return {
           icon: Server,
-          title: "Stream Temporarily Busy",
-          message: error.message || "The upstream server took a moment to prepare the stream. Please click 'Try Again' or use the direct saver links below.",
-          color: "text-amber-400 border-amber-500/30 bg-amber-500/10",
+          title: "Download Processing Failed",
+          message: error.message || "This content cannot currently be processed by the media provider. Please try again or test another URL.",
+          color: "text-rose-400 border-rose-500/30 bg-rose-500/10",
         };
       case 'EXTRACTION_FAILED':
         return {
@@ -57,26 +57,15 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({ error, url, onRetry }) =
       default:
         return {
           icon: Server,
-          title: "Stream Saver Notice",
-          message: error.message || "This media stream is protected or restricted. Use our Direct Saver Backup below to download immediately.",
-          color: "text-indigo-400 border-indigo-500/30 bg-indigo-500/10",
+          title: "Unable to Prepare Download",
+          message: error.message || "An error occurred while preparing your download stream. Please verify the URL and try again.",
+          color: "text-rose-400 border-rose-500/30 bg-rose-500/10",
         };
     }
   };
 
   const details = getErrorDetails();
   const Icon = details.icon;
-
-  // Extract YouTube ID or Instagram URL for direct backup links
-  const targetUrl = (url || '').trim();
-  const ytMatch = targetUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|shorts\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
-  const videoId = ytMatch ? ytMatch[1] : null;
-  const igMatch = targetUrl.match(/(?:instagram\.com|instagr\.am)\/(?:p|reel|reels)\/([A-Za-z0-9_-]+)/i);
-  const igShortcode = igMatch ? igMatch[1] : null;
-
-  const ssYoutubeUrl = videoId ? `https://ssyoutube.com/watch?v=${videoId}` : null;
-  const loaderUrl = videoId ? `https://loader.to/ajax/download.php?button=1&start=1&end=1&format=720&url=${encodeURIComponent(targetUrl)}` : null;
-  const ddIgUrl = igShortcode ? `https://ddinstagram.com/reel/${igShortcode}/` : null;
 
   return (
     <div className="w-full max-w-2xl mx-auto my-6 animate-slide-up space-y-4">
@@ -103,61 +92,8 @@ export const ErrorAlert: React.FC<ErrorAlertProps> = ({ error, url, onRetry }) =
           <span>Try Again</span>
         </button>
       </div>
-
-      {/* Direct Converter Backup Buttons when stream host is restricted */}
-      {(videoId || igShortcode) && (
-        <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-md shadow-lg text-left space-y-3">
-          <div className="flex items-center space-x-2 text-xs font-bold uppercase tracking-wider text-accent-violet">
-            <ExternalLink className="w-4 h-4" />
-            <span>Direct Media Downloader Backup</span>
-          </div>
-          <p className="text-xs text-slate-400">
-            Due to host restrictions on this specific link, use these direct 1-click saver links to download your file:
-          </p>
-
-          <div className="flex flex-col sm:flex-row gap-3 pt-1">
-            {videoId && (
-              <>
-                <a
-                  href={ssYoutubeUrl!}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-accent-violet to-indigo-600 hover:opacity-95 text-white font-bold text-xs flex items-center justify-center space-x-2 shadow-md transition-all"
-                >
-                  <Video className="w-4 h-4" />
-                  <span>Download Video (MP4)</span>
-                  <ExternalLink className="w-3 h-3 opacity-70" />
-                </a>
-
-                <a
-                  href={`https://y2mate.is/en/youtube-downloader/`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-accent-blue to-teal-600 hover:opacity-95 text-white font-bold text-xs flex items-center justify-center space-x-2 shadow-md transition-all"
-                >
-                  <Music className="w-4 h-4" />
-                  <span>Download Audio (MP3)</span>
-                  <ExternalLink className="w-3 h-3 opacity-70" />
-                </a>
-              </>
-            )}
-
-            {igShortcode && ddIgUrl && (
-              <a
-                href={ddIgUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:opacity-95 text-white font-bold text-xs flex items-center justify-center space-x-2 shadow-md transition-all"
-              >
-                <Video className="w-4 h-4" />
-                <span>Save Instagram Reel / Post (MP4)</span>
-                <ExternalLink className="w-3 h-3 opacity-70" />
-              </a>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };
+
 

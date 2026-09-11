@@ -192,12 +192,26 @@ class YtDlpService {
       }
     }
 
-    // Spawn yt-dlp with ffmpeg stream merging piped directly to stdout
+    // Temporary File Buffer Strategy for Guaranteed Stream Verification & Exact Content-Length
+    const tempDir = path.join(os.tmpdir(), 'downly-media');
+    if (!fs.existsSync(tempDir)) {
+      try {
+        fs.mkdirSync(tempDir, { recursive: true });
+      } catch {
+        // Ignore
+      }
+    }
+
+    const uniqueId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const tempFilePath = path.join(tempDir, `downly_${uniqueId}.${extension}`);
+
     const spawnArgs = [
       '-o',
-      '-',
+      tempFilePath,
       '-f',
       ytDlpFormatSelector,
+      '--merge-output-format',
+      extension === 'mp3' ? 'mp3' : extension === 'm4a' ? 'm4a' : 'mp4',
       '--no-playlist',
       '--no-warnings',
       '--no-check-certificates',
@@ -212,13 +226,59 @@ class YtDlpService {
     }
     spawnArgs.push(url);
 
-    const child = spawn(this.binaryPath, spawnArgs);
+    return new Promise((resolve, reject) => {
+      execFile(this.binaryPath, spawnArgs, { timeout: 120000 }, (error, stdout, stderr) => {
+        // Find created temp file (in case yt-dlp appended extension or altered container)
+        let actualFile = tempFilePath;
+        if (!fs.existsSync(actualFile)) {
+          const files = fs.readdirSync(tempDir).filter((f) => f.includes(uniqueId));
+          if (files.length > 0) {
+            actualFile = path.join(tempDir, files[0]);
+          }
+        }
 
-    return {
-      stream: child.stdout as unknown as Readable,
-      filename,
-      mimeType,
-    };
+        if (!fs.existsSync(actualFile)) {
+          console.error('[YtDlpService] Temporary download failed. Stderr:', stderr || error?.message);
+          const err: any = new Error('This content cannot currently be processed by the media provider.');
+          err.code = 'PROVIDER_UNAVAILABLE';
+          return reject(err);
+        }
+
+        const stat = fs.statSync(actualFile);
+        if (stat.size <= 0) {
+          try { fs.unlinkSync(actualFile); } catch {}
+          const err: any = new Error('Provider returned 0 bytes for requested media.');
+          err.code = 'PROVIDER_UNAVAILABLE';
+          return reject(err);
+        }
+
+        console.log(`[YtDlpService] Temp file created successfully: ${actualFile} (${stat.size} bytes)`);
+
+        const fileStream = fs.createReadStream(actualFile);
+
+        // Auto-cleanup temp file when stream ends, closes, or errors
+        const cleanup = () => {
+          try {
+            if (fs.existsSync(actualFile)) {
+              fs.unlinkSync(actualFile);
+              console.log(`[YtDlpService] Cleaned up temp file: ${actualFile}`);
+            }
+          } catch {
+            // Ignore
+          }
+        };
+
+        fileStream.on('close', cleanup);
+        fileStream.on('error', cleanup);
+
+        resolve({
+          stream: fileStream,
+          filename,
+          mimeType,
+          contentLength: stat.size,
+        });
+      });
+    });
   }
 
   private getDirectUrl(url: string, formatSelector: string): Promise<string[]> {
