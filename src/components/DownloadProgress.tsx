@@ -66,64 +66,21 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
         throw new Error('Could not generate download stream URL');
       }
 
-      setDownloadStatus('Downloading media bytes into device memory...');
+      setDownloadStatus('Starting download stream...');
 
-      // 2. Fetch media stream as Blob with retry logic to avoid browser download errors
-      let streamBlob: Blob | null = null;
-      let attempts = 0;
-      const maxAttempts = 3;
+      const link = document.createElement('a');
+      link.href = finalStreamUrl;
+      link.setAttribute('download', filename);
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
 
-      while (attempts < maxAttempts && !streamBlob) {
-        attempts++;
-        try {
-          const streamRes = await fetch(finalStreamUrl);
-          if (streamRes.ok) {
-            const contentType = streamRes.headers.get('content-type') || '';
-            if (
-              !contentType.includes('application/json') &&
-              !contentType.includes('text/html') &&
-              !contentType.includes('text/plain')
-            ) {
-              const blob = await streamRes.blob();
-              if (blob.size > 10000) {
-                streamBlob = blob;
-                break;
-              }
-            }
-          }
-          if (attempts < maxAttempts) {
-            await new Promise((r) => setTimeout(r, 1200));
-          }
-        } catch {
-          if (attempts < maxAttempts) {
-            await new Promise((r) => setTimeout(r, 1200));
-          }
-        }
-      }
-
-      if (streamBlob) {
-        // Trigger clean in-memory browser download
-        const blobUrl = URL.createObjectURL(streamBlob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.setAttribute('download', filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        setDownloadStatus('File downloaded successfully to your device!');
-        setTimeout(() => {
-          URL.revokeObjectURL(blobUrl);
-          setDownloading(false);
-          setDownloadStatus(null);
-        }, 3000);
-      } else {
-        setDownloadStatus('Stream currently busy. Please try again.');
-        setTimeout(() => {
-          setDownloading(false);
-          setDownloadStatus(null);
-        }, 3000);
-      }
+      setDownloadStatus('File download started!');
+      setTimeout(() => {
+        setDownloading(false);
+        setDownloadStatus(null);
+      }, 3000);
 
     } catch (err: any) {
       console.warn('[Downly] Download stream error:', err);

@@ -157,17 +157,17 @@ class YtDlpService {
     const extension = isMp3 ? 'mp3' : isAudio ? 'm4a' : 'mp4';
     const mimeType = isMp3 ? 'audio/mpeg' : isAudio ? 'audio/mp4' : 'video/mp4';
 
-    let ytDlpFormatSelector = 'best[ext=mp4]/b[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best';
+    let ytDlpFormatSelector = 'bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best/b';
     if (isMp3 || isAudio) {
       ytDlpFormatSelector = 'bestaudio/best';
     } else if (formatId.includes('1080p')) {
-      ytDlpFormatSelector = 'best[height<=1080][ext=mp4]/b[height<=1080][ext=mp4]/bestvideo[height<=1080]+bestaudio/best';
+      ytDlpFormatSelector = 'bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best/b';
     } else if (formatId.includes('720p')) {
-      ytDlpFormatSelector = 'best[height<=720][ext=mp4]/b[height<=720][ext=mp4]/bestvideo[height<=720]+bestaudio/best';
+      ytDlpFormatSelector = 'bestvideo[height<=720]+bestaudio/bestvideo+bestaudio/best/b';
     } else if (formatId.includes('480p')) {
-      ytDlpFormatSelector = 'best[height<=480][ext=mp4]/b[height<=480][ext=mp4]/bestvideo[height<=480]+bestaudio/best';
+      ytDlpFormatSelector = 'bestvideo[height<=480]+bestaudio/bestvideo+bestaudio/best/b';
     } else if (formatId.includes('360p')) {
-      ytDlpFormatSelector = 'best[height<=360][ext=mp4]/b[height<=360][ext=mp4]/bestvideo[height<=360]+bestaudio/best';
+      ytDlpFormatSelector = 'b[height<=360]/bestvideo[height<=360]+bestaudio/best/b';
     }
 
     const sanitizedTitle = fallbackTitle.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 50);
@@ -277,7 +277,7 @@ class YtDlpService {
     });
   }
 
-  private getDirectUrl(url: string, formatSelector: string): Promise<string[]> {
+  public getDirectUrl(url: string, formatSelector: string): Promise<string[]> {
     return new Promise((resolve, reject) => {
       const args = [
         '-g',

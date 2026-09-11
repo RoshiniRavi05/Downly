@@ -393,74 +393,18 @@ export function App() {
       const ext = isAudio ? 'mp3' : 'mp4';
       const filename = `Downly_${cleanTitle}.${ext}`;
 
-      // Fetch stream with retry to ensure stream readiness before browser save
-      let streamBlob: Blob | null = null;
-      let attempts = 0;
-      const maxAttempts = 3;
-      let lastErrorDetails: { code?: string; message?: string } | null = null;
+      // Trigger native browser download directly via standard attachment link
+      const link = document.createElement('a');
+      link.href = data.streamUrl;
+      link.setAttribute('download', filename);
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
 
-      while (attempts < maxAttempts && !streamBlob) {
-        attempts++;
-        try {
-          const streamRes = await fetch(data.streamUrl);
-          const contentType = streamRes.headers.get('content-type') || '';
-
-          if (streamRes.ok) {
-            if (
-              !contentType.includes('application/json') &&
-              !contentType.includes('text/html') &&
-              !contentType.includes('text/plain')
-            ) {
-              const blob = await streamRes.blob();
-              if (blob.size > 1000) {
-                streamBlob = blob;
-                break;
-              }
-            }
-          } else {
-            try {
-              const errJson = await streamRes.json();
-              if (errJson) {
-                lastErrorDetails = {
-                  code: errJson.code || 'STREAM_UNAVAILABLE',
-                  message: errJson.message,
-                };
-              }
-            } catch {
-              // Non-JSON error
-            }
-          }
-          if (attempts < maxAttempts) {
-            await new Promise((r) => setTimeout(r, 1000));
-          }
-        } catch {
-          if (attempts < maxAttempts) {
-            await new Promise((r) => setTimeout(r, 1000));
-          }
-        }
-      }
-
-      if (streamBlob) {
-        // Trigger clean in-memory browser device save
-        const blobUrl = URL.createObjectURL(streamBlob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.setAttribute('download', filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        setTimeout(() => {
-          URL.revokeObjectURL(blobUrl);
-          setAppState('completed');
-        }, 1500);
-      } else {
-        setAppState('error');
-        setError({
-          code: lastErrorDetails?.code || 'STREAM_UNAVAILABLE',
-          message: lastErrorDetails?.message || 'The upstream server took a moment to prepare the stream. Please try again or use our direct saver links below.',
-        });
-      }
+      setTimeout(() => {
+        setAppState('completed');
+      }, 1000);
 
     } catch (err) {
       setAppState('error');

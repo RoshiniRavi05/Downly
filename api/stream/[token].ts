@@ -25,8 +25,32 @@ function buildContentDispositionHeader(rawFilename: string): string {
 
 async function resolveDirectMediaStream(originalUrl: string, formatId: string, platform: string): Promise<string | null> {
   const isAudio = formatId.includes('audio') || formatId.includes('mp3');
+  const isMp3 = formatId.includes('mp3');
 
-  // 1. YouTube Direct Resolution via @distube/ytdl-core
+  let ytDlpFormatSelector = 'bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best/b';
+  if (isMp3 || isAudio) {
+    ytDlpFormatSelector = 'bestaudio/best';
+  } else if (formatId.includes('1080p')) {
+    ytDlpFormatSelector = 'bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best/b';
+  } else if (formatId.includes('720p')) {
+    ytDlpFormatSelector = 'bestvideo[height<=720]+bestaudio/bestvideo+bestaudio/best/b';
+  } else if (formatId.includes('480p')) {
+    ytDlpFormatSelector = 'bestvideo[height<=480]+bestaudio/bestvideo+bestaudio/best/b';
+  } else if (formatId.includes('360p')) {
+    ytDlpFormatSelector = 'b[height<=360]/bestvideo[height<=360]+bestaudio/best/b';
+  }
+
+  // 1. Fast direct extraction via ytDlpService (<1.5s)
+  try {
+    const streamUrls = await ytDlpService.getDirectUrl(originalUrl, ytDlpFormatSelector);
+    if (streamUrls && streamUrls.length > 0 && streamUrls[0].startsWith('http')) {
+      return streamUrls[0];
+    }
+  } catch (err) {
+    if (isDev) console.warn('[Downly Stream Log] ytDlpService direct URL notice:', err);
+  }
+
+  // 2. YouTube Direct Resolution via @distube/ytdl-core
   if (platform === 'youtube' || originalUrl.includes('youtube.com') || originalUrl.includes('youtu.be')) {
     try {
       const info = await ytdl.getInfo(originalUrl, {
@@ -57,7 +81,7 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string, p
     }
   }
 
-  // 2. Instagram Direct Extraction
+  // 3. Instagram Direct Extraction
   if (platform === 'instagram' || originalUrl.includes('instagram.com')) {
     try {
       const igRes = await fetch(originalUrl, {
@@ -79,78 +103,17 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string, p
     }
   }
 
-  // 3. Fast Parallel Invidious / Piped / Direct Proxy Fallbacks
-  const ytMatch = originalUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|shorts\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
-  if (ytMatch && ytMatch[1]) {
-    const videoId = ytMatch[1];
-    const itag = isAudio ? '140' : formatId.includes('720') ? '22' : '18';
-
-    const directProxies = [
-      `https://yewtu.be/latest_version?id=${videoId}&itag=${itag}`,
-      `https://invidious.nerdvpn.de/latest_version?id=${videoId}&itag=${itag}`,
-      `https://inv.tux.pizza/latest_version?id=${videoId}&itag=${itag}`,
-    ];
-
-    for (const proxyUrl of directProxies) {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 2000);
-        const headRes = await fetch(proxyUrl, { method: 'HEAD', signal: controller.signal });
-        clearTimeout(timeout);
-        if (headRes.ok || (headRes.status >= 300 && headRes.status < 400)) {
-          return proxyUrl;
-        }
-      } catch {
-        // Try next
-      }
-    }
-
-    const fastEndpoints = [
-      `https://pipedapi.kavin.rocks/streams/${videoId}`,
-      `https://api.piped.privacydev.net/streams/${videoId}`,
-      `https://invidious.nerdvpn.de/api/v1/videos/${videoId}`,
-      `https://yewtu.be/api/v1/videos/${videoId}`,
-    ];
-
-    const fetchPromises = fastEndpoints.map(async (ep) => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 3500);
-      try {
-        const res = await fetch(ep, { signal: controller.signal });
-        clearTimeout(timeout);
-        if (res.ok) {
-          const data: any = await res.json();
-          if (isAudio && Array.isArray(data.audioStreams) && data.audioStreams[0]?.url) {
-            return data.audioStreams[0].url;
-          }
-          if (Array.isArray(data.videoStreams)) {
-            const stream = data.videoStreams.find((s: any) => s.mimeType?.includes('video/mp4')) || data.videoStreams[0];
-            if (stream?.url) return stream.url;
-          }
-          if (Array.isArray(data.formatStreams) && data.formatStreams[0]?.url) {
-            return data.formatStreams[0].url;
-          }
-        }
-      } catch {
-        // Ignore
-      }
-      throw new Error('Failed endpoint');
-    });
-
-    try {
-      const fastestUrl = await Promise.any(fetchPromises);
-      if (fastestUrl) return fastestUrl;
-    } catch {
-      // Ignore
-    }
-  }
-
   return null;
 }
 
 function streamFileToClient(url: string, res: any, filename: string, isAudio: boolean, formatId: string, depth = 0) {
   if (depth > 6) {
     return res.status(502).json({ success: false, code: 'TOO_MANY_REDIRECTS', message: 'Too many stream redirects' });
+  }
+
+  // Direct CDN Redirect for ultra-fast browser downloads without serverless timeouts
+  if (process.env.VERCEL === '1' || url.includes('googlevideo.com') || url.includes('cdninstagram.com')) {
+    return res.redirect(302, url);
   }
 
   const client = url.startsWith('https:') ? https : http;
