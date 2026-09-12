@@ -24,5 +24,7 @@ Thumbs.db
 .idea/
 
 # Binaries
-server/bin/
+server/bin/ffmpeg.exe
+server/bin/yt-dlp.exe
+!server/bin/yt-dlp
 

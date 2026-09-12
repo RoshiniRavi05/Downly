@@ -83,25 +83,49 @@ class YtDlpService {
   }
 
   private get binaryPath(): string {
-    this.ensureBinary();
     const isWin = process.platform === 'win32';
-    if (isWin && fs.existsSync(BIN_PATH_WIN)) {
-      return BIN_PATH_WIN;
-    }
-    if (!isWin && fs.existsSync(BIN_PATH_NIX)) {
-      try {
-        fs.chmodSync(BIN_PATH_NIX, 0o755);
-      } catch {
-        // Ignore permission error
+    const projectBin = isWin
+      ? path.join(process.cwd(), 'server', 'bin', 'yt-dlp.exe')
+      : path.join(process.cwd(), 'server', 'bin', 'yt-dlp');
+
+    if (fs.existsSync(projectBin)) {
+      if (!isWin) {
+        try {
+          const tmpBin = path.join(os.tmpdir(), 'yt-dlp');
+          if (!fs.existsSync(tmpBin)) {
+            fs.copyFileSync(projectBin, tmpBin);
+            fs.chmodSync(tmpBin, 0o755);
+          }
+          return tmpBin;
+        } catch {
+          return projectBin;
+        }
       }
-      return BIN_PATH_NIX;
+      return projectBin;
     }
+
+    const fallbackPath = isWin ? BIN_PATH_WIN : BIN_PATH_NIX;
+    if (fs.existsSync(fallbackPath)) {
+      if (!isWin) {
+        try { fs.chmodSync(fallbackPath, 0o755); } catch {}
+      }
+      return fallbackPath;
+    }
+
+    this.ensureBinary();
     return isWin ? 'yt-dlp.exe' : 'yt-dlp';
   }
 
   private get ffmpegDir(): string {
-    this.ensureBinary();
     const isWin = process.platform === 'win32';
+    const projectFfmpeg = isWin
+      ? path.join(process.cwd(), 'server', 'bin', 'ffmpeg.exe')
+      : path.join(process.cwd(), 'server', 'bin', 'ffmpeg');
+
+    if (fs.existsSync(projectFfmpeg)) {
+      return path.join(process.cwd(), 'server', 'bin');
+    }
+
     const ffmpegWin = path.join(BASE_BIN_DIR, 'ffmpeg.exe');
     const ffmpegNix = path.join(BASE_BIN_DIR, 'ffmpeg');
 
@@ -157,17 +181,17 @@ class YtDlpService {
     const extension = isMp3 ? 'mp3' : isAudio ? 'm4a' : 'mp4';
     const mimeType = isMp3 ? 'audio/mpeg' : isAudio ? 'audio/mp4' : 'video/mp4';
 
-    let ytDlpFormatSelector = 'bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best/b';
+    let ytDlpFormatSelector = '18/22/137/136/135/134/133/ba/b/bestvideo+bestaudio/best';
     if (isMp3 || isAudio) {
-      ytDlpFormatSelector = 'bestaudio/best';
+      ytDlpFormatSelector = 'ba/140/251/bestaudio/best';
     } else if (formatId.includes('1080p')) {
-      ytDlpFormatSelector = 'bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best/b';
+      ytDlpFormatSelector = '137/1080p/bestvideo[height<=1080]+bestaudio/18/22/b';
     } else if (formatId.includes('720p')) {
-      ytDlpFormatSelector = 'bestvideo[height<=720]+bestaudio/bestvideo+bestaudio/best/b';
+      ytDlpFormatSelector = '22/136/720p/bestvideo[height<=720]+bestaudio/18/b';
     } else if (formatId.includes('480p')) {
-      ytDlpFormatSelector = 'bestvideo[height<=480]+bestaudio/bestvideo+bestaudio/best/b';
+      ytDlpFormatSelector = '135/480p/bestvideo[height<=480]+bestaudio/18/b';
     } else if (formatId.includes('360p')) {
-      ytDlpFormatSelector = 'b[height<=360]/bestvideo[height<=360]+bestaudio/best/b';
+      ytDlpFormatSelector = '18/134/360p/b';
     }
 
     const sanitizedTitle = fallbackTitle.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 50);
