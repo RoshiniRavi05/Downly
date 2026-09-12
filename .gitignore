@@ -24,7 +24,5 @@ Thumbs.db
 .idea/
 
 # Binaries
-server/bin/*
-!server/bin/yt-dlp
-!server/bin/yt-dlp.exe
+server/bin/
 

@@ -52,7 +52,7 @@ export function validateAndSanitizeUrl(rawUrl: string): { valid: boolean; normal
   }
 
   // Domain allowlist check
-  const isAllowedDomain = CONFIG.ALLOWED_DOMAINS.some((allowed) => {
+  const isAllowedDomain = CONFIG.ALLOWED_DOMAINS.some((allowed: string) => {
     return hostname === allowed || hostname.endsWith('.' + allowed);
   });
 
