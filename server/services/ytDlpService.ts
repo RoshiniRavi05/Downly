@@ -218,7 +218,92 @@ class YtDlpService {
       }
     }
 
-    // 2. Server-side Buffer & Merge with ffmpeg (Guarantees complete MP4 with synced Audio + Video)
+    // 2. Real-time stdout stream via spawn for immediate (<1s) header & chunk delivery
+    try {
+      const streamArgs = [
+        '-f',
+        ytDlpFormatSelector,
+        '--no-playlist',
+        '--no-warnings',
+        '--no-check-certificates',
+        '--geo-bypass',
+        '--user-agent',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      ];
+
+      const ffDir = this.ffmpegDir;
+      if (ffDir) {
+        streamArgs.push('--ffmpeg-location', ffDir);
+      }
+
+      if (!isAudio && !isMp3) {
+        streamArgs.push('--postprocessor-args', 'ffmpeg:-movflags frag_keyframe+empty_moov+default_base_moof');
+      }
+
+      streamArgs.push('-o', '-');
+      streamArgs.push(url);
+
+      const streamProc = spawn(this.binaryPath, streamArgs, { windowsHide: true });
+
+      const streamResult = await new Promise<StreamResult | null>((resolve) => {
+        let emitted = false;
+        const timer = setTimeout(() => {
+          if (!emitted) {
+            emitted = true;
+            try { streamProc.kill(); } catch {}
+            resolve(null);
+          }
+        }, 8000);
+
+        streamProc.stdout.once('data', (firstChunk: Buffer) => {
+          if (emitted) return;
+          emitted = true;
+          clearTimeout(timer);
+
+          streamProc.stdout.unshift(firstChunk);
+
+          const cleanup = () => {
+            try {
+              if (!streamProc.killed) streamProc.kill();
+            } catch {}
+          };
+
+          streamProc.stdout.on('close', cleanup);
+          streamProc.stdout.on('error', cleanup);
+
+          resolve({
+            stream: streamProc.stdout as unknown as NodeJS.ReadableStream,
+            filename,
+            mimeType,
+          });
+        });
+
+        streamProc.on('error', () => {
+          if (!emitted) {
+            emitted = true;
+            clearTimeout(timer);
+            resolve(null);
+          }
+        });
+
+        streamProc.on('close', () => {
+          if (!emitted) {
+            emitted = true;
+            clearTimeout(timer);
+            resolve(null);
+          }
+        });
+      });
+
+      if (streamResult) {
+        console.log(`[YtDlpService] Real-time stdout stream initialized for ${filename}`);
+        return streamResult;
+      }
+    } catch (spawnErr) {
+      console.warn('[YtDlpService] Real-time stdout spawn notice, falling back to temp file buffer:', spawnErr);
+    }
+
+    // 3. Fallback: Server-side Buffer & Merge with ffmpeg (Guarantees complete MP4 with synced Audio + Video)
     const tempDir = path.join(os.tmpdir(), 'downly-media');
     if (!fs.existsSync(tempDir)) {
       try {

@@ -116,6 +116,16 @@ export async function streamMediaController(req: Request, res: Response, next: N
       throw err;
     }
 
+    if (req.method === 'HEAD') {
+      const isAudio = formatId.includes('audio') || formatId.includes('mp3');
+      const isMp3 = formatId.includes('mp3');
+      const computedMime = isMp3 ? 'audio/mpeg' : isAudio ? 'audio/mp4' : 'video/mp4';
+      res.status(200);
+      res.setHeader('Content-Type', computedMime);
+      res.end();
+      return;
+    }
+
     // Fresh Media Stream Request
     const result = await provider.getDownloadStream(mediaId, formatId, originalUrl);
     providerStream = result.stream;

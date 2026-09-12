@@ -261,6 +261,14 @@ export default async function handler(req: any, res: any) {
     const ext = isMp3 ? 'mp3' : isAudio ? 'm4a' : 'mp4';
     const filename = `Downly_${platform}_${mediaId}.${ext}`;
 
+    if (req.method === 'HEAD') {
+      const computedMime = isMp3 ? 'audio/mpeg' : isAudio ? 'audio/mp4' : 'video/mp4';
+      res.status(200);
+      res.setHeader('Content-Type', computedMime);
+      res.setHeader('Content-Disposition', buildContentDispositionHeader(filename));
+      return res.end();
+    }
+
     if (isDev) {
       console.log('=== [DOWNLOAD START] ===');
       console.log(`[PROVIDER] ${platform}`);
