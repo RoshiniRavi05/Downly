@@ -111,11 +111,6 @@ function streamFileToClient(url: string, res: any, filename: string, isAudio: bo
     return res.status(502).json({ success: false, code: 'TOO_MANY_REDIRECTS', message: 'Too many stream redirects' });
   }
 
-  // Direct CDN Redirect for ultra-fast browser downloads without serverless timeouts
-  if (process.env.VERCEL === '1' || url.includes('googlevideo.com') || url.includes('cdninstagram.com')) {
-    return res.redirect(302, url);
-  }
-
   const client = url.startsWith('https:') ? https : http;
   const options = {
     headers: {
@@ -128,7 +123,8 @@ function streamFileToClient(url: string, res: any, filename: string, isAudio: bo
 
   const req = client.get(url, options, (streamRes) => {
     if (streamRes.statusCode && streamRes.statusCode >= 300 && streamRes.statusCode < 400 && streamRes.headers.location) {
-      return streamFileToClient(streamRes.headers.location, res, filename, isAudio, formatId, depth + 1);
+      const redirectUrl = new URL(streamRes.headers.location, url).toString();
+      return streamFileToClient(redirectUrl, res, filename, isAudio, formatId, depth + 1);
     }
 
     if (streamRes.statusCode && streamRes.statusCode >= 400) {
