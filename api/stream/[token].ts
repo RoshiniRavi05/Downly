@@ -3,6 +3,7 @@ import https from 'https';
 import http from 'http';
 import ytdlPackage from '@distube/ytdl-core';
 import { ytDlpService } from '../../server/services/ytDlpService';
+import { resolveDirectMediaStreamUrl } from '../../server/services/directResolver';
 
 const ytdl: typeof import('@distube/ytdl-core') = (ytdlPackage as any).default || ytdlPackage;
 const TOKEN_SECRET = process.env.TOKEN_SECRET || 'downly_secret_token_key_change_in_production_987654321';
@@ -231,7 +232,17 @@ export default async function handler(req: any, res: any) {
       console.log(`[Downly Stream Log] API Handler processing platform=${platform}, mediaId=${mediaId}, formatId=${formatId}`);
     }
 
-    // Try ytDlpService first for local node / server environments
+    // 1. High-Speed Direct JS Stream Resolution (<200ms)
+    try {
+      const directMedia = await resolveDirectMediaStreamUrl(targetUrl, formatId, platform);
+      if (directMedia && directMedia.url) {
+        return streamFileToClient(directMedia.url, res, filename, isAudio, formatId);
+      }
+    } catch (directErr) {
+      if (isDev) console.warn('[API Stream Log] resolveDirectMediaStreamUrl notice:', directErr);
+    }
+
+    // 2. Local ytDlpService Stream Resolution
     try {
       const result = await ytDlpService.getMediaStream(targetUrl, formatId, `${platform}_${mediaId}`);
       if (result && result.stream) {
@@ -262,7 +273,7 @@ export default async function handler(req: any, res: any) {
       if (isDev) console.warn('[API Stream Log] ytDlpService stream failed, fallback to direct stream:', ytErr);
     }
 
-    // Resolve exact stream fallback
+    // 3. Resolve exact stream fallback
     const directStreamUrl = await resolveDirectMediaStream(targetUrl, formatId, platform);
 
     if (directStreamUrl) {
