@@ -68,11 +68,6 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
 
       setDownloadStatus('Starting download stream...');
 
-      const probeRes = await fetch(finalStreamUrl, { method: 'HEAD' });
-      if (!probeRes.ok) {
-        throw new Error('Unable to prepare this download right now.');
-      }
-
       const link = document.createElement('a');
       link.href = finalStreamUrl;
       link.setAttribute('download', filename);

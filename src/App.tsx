@@ -393,12 +393,6 @@ export function App() {
       const ext = isAudio ? 'mp3' : 'mp4';
       const filename = `Downly_${cleanTitle}.${ext}`;
 
-      // Validate stream endpoint before triggering browser download
-      const probeRes = await fetch(data.streamUrl, { method: 'HEAD' });
-      if (!probeRes.ok) {
-        throw new Error('Unable to prepare this download right now. Please try again.');
-      }
-
       // Trigger native browser download directly via standard attachment link
       const link = document.createElement('a');
       link.href = data.streamUrl;
@@ -411,11 +405,11 @@ export function App() {
         setAppState('completed');
       }, 1500);
 
-    } catch (err) {
+    } catch (err: any) {
       setAppState('error');
       setError({
         code: 'DOWNLOAD_FAILED',
-        message: "An unexpected error occurred preparing your download stream.",
+        message: err?.message || "An unexpected error occurred preparing your download stream.",
       });
     }
   };

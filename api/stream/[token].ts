@@ -220,6 +220,7 @@ function streamFileToClient(url: string, res: any, filename: string, isAudio: bo
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS');
   res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length');
 
   if (req.method === 'OPTIONS') {
@@ -227,7 +228,8 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const tokenStr = (req.query?.token || req.query?.['[token]']) as string;
+    const urlMatch = req.url ? req.url.match(/\/api\/stream\/([^\/\?#]+)/) : null;
+    const tokenStr = (req.query?.token || req.query?.['[token]'] || (urlMatch ? urlMatch[1] : null)) as string;
     if (!tokenStr) {
       return res.status(400).json({
         success: false,
