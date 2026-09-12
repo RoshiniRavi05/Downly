@@ -397,7 +397,6 @@ export function App() {
       const link = document.createElement('a');
       link.href = data.streamUrl;
       link.setAttribute('download', filename);
-      link.target = '_blank';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

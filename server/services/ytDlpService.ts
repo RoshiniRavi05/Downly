@@ -5,6 +5,7 @@ import { execFile, execSync, spawn } from 'child_process';
 import { Readable } from 'stream';
 import { StreamResult } from '../providers/MediaProvider';
 import { fetchRemoteStream } from './streamHelper';
+import { CONFIG } from '../config/index';
 
 const isVercel = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
 const BASE_BIN_DIR = isVercel
@@ -150,7 +151,7 @@ class YtDlpService {
       execFile(
         this.binaryPath,
         args,
-        { maxBuffer: 10 * 1024 * 1024 },
+        { maxBuffer: 10 * 1024 * 1024, timeout: CONFIG.METADATA_TIMEOUT_MS },
         (error, stdout, stderr) => {
           if (error) {
             console.error('[YtDlpService] Error extracting info:', stderr || error.message);
@@ -181,41 +182,43 @@ class YtDlpService {
     const extension = isMp3 ? 'mp3' : isAudio ? 'm4a' : 'mp4';
     const mimeType = isMp3 ? 'audio/mpeg' : isAudio ? 'audio/mp4' : 'video/mp4';
 
-    let ytDlpFormatSelector = '18/22/137/136/135/134/133/ba/b/bestvideo+bestaudio/best';
+    let ytDlpFormatSelector = 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bestvideo+bestaudio/best';
     if (isMp3 || isAudio) {
       ytDlpFormatSelector = 'ba/140/251/bestaudio/best';
     } else if (formatId.includes('1080p')) {
-      ytDlpFormatSelector = '137/1080p/bestvideo[height<=1080]+bestaudio/18/22/b';
+      ytDlpFormatSelector = 'bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
     } else if (formatId.includes('720p')) {
-      ytDlpFormatSelector = '22/136/720p/bestvideo[height<=720]+bestaudio/18/b';
+      ytDlpFormatSelector = 'bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/bestvideo[height<=720]+bestaudio/best[height<=720]/best';
     } else if (formatId.includes('480p')) {
-      ytDlpFormatSelector = '135/480p/bestvideo[height<=480]+bestaudio/18/b';
+      ytDlpFormatSelector = 'bv*[height<=480][ext=mp4]+ba[ext=m4a]/b[height<=480][ext=mp4]/bestvideo[height<=480]+bestaudio/best[height<=480]/best';
     } else if (formatId.includes('360p')) {
-      ytDlpFormatSelector = '18/134/360p/b';
+      ytDlpFormatSelector = 'bv*[height<=360][ext=mp4]+ba[ext=m4a]/b[height<=360][ext=mp4]/bestvideo[height<=360]+bestaudio/best[height<=360]/best';
     }
 
     const sanitizedTitle = fallbackTitle.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 50);
     const filename = `Downly_${sanitizedTitle}_${formatId}.${extension}`;
 
-    // 1. Instant Direct Stream Resolution (<1.5s execution time - perfect for Vercel Serverless)
-    try {
-      const streamUrls = await this.getDirectUrl(url, ytDlpFormatSelector);
-      if (streamUrls && streamUrls.length > 0) {
-        const directUrl = streamUrls[0];
-        console.log(`[YtDlpService] Direct stream URL extracted in <1.5s: ${directUrl.substring(0, 80)}...`);
-        const remote = await fetchRemoteStream(directUrl);
-        return {
-          stream: remote.stream,
-          filename,
-          mimeType: remote.contentType || mimeType,
-          contentLength: remote.contentLength,
-        };
+    // 1. Fast Direct Stream Resolution for standalone audio
+    if (isAudio || isMp3) {
+      try {
+        const streamUrls = await this.getDirectUrl(url, ytDlpFormatSelector);
+        if (streamUrls && streamUrls.length > 0) {
+          const directUrl = streamUrls[0];
+          console.log(`[YtDlpService] Direct audio stream URL extracted: ${directUrl.substring(0, 80)}...`);
+          const remote = await fetchRemoteStream(directUrl);
+          return {
+            stream: remote.stream,
+            filename,
+            mimeType: remote.contentType || mimeType,
+            contentLength: remote.contentLength,
+          };
+        }
+      } catch (err) {
+        console.warn('[YtDlpService] Direct URL extraction notice, falling back to process buffer:', err);
       }
-    } catch (err) {
-      console.warn('[YtDlpService] Direct URL extraction notice, falling back to process buffer:', err);
     }
 
-    // 2. Server-side Buffer Fallback for Local Node Servers
+    // 2. Server-side Buffer & Merge with ffmpeg (Guarantees complete MP4 with synced Audio + Video)
     const tempDir = path.join(os.tmpdir(), 'downly-media');
     if (!fs.existsSync(tempDir)) {
       try {
@@ -250,7 +253,7 @@ class YtDlpService {
     spawnArgs.push(url);
 
     return new Promise((resolve, reject) => {
-      execFile(this.binaryPath, spawnArgs, { timeout: 25000 }, (error, stdout, stderr) => {
+      execFile(this.binaryPath, spawnArgs, { timeout: CONFIG.PROCESSING_TIMEOUT_MS }, (error, stdout, stderr) => {
         let actualFile = tempFilePath;
         if (!fs.existsSync(actualFile)) {
           const files = fs.readdirSync(tempDir).filter((f) => f.includes(uniqueId));
@@ -320,7 +323,7 @@ class YtDlpService {
       }
       args.push(url);
 
-      execFile(this.binaryPath, args, (error, stdout) => {
+      execFile(this.binaryPath, args, { timeout: CONFIG.MEDIA_RESOLUTION_TIMEOUT_MS }, (error, stdout) => {
         if (error) return reject(error);
         const urls = stdout.trim().split('\n').filter(Boolean);
         resolve(urls);

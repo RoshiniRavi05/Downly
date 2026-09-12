@@ -155,23 +155,56 @@ function streamFileToClient(url: string, res: any, filename: string, isAudio: bo
 
     const contentDisposition = buildContentDispositionHeader(filename);
 
+    if (isDev) {
+      console.log(`[UPSTREAM STATUS] ${streamRes.statusCode || 200}`);
+      console.log(`[UPSTREAM CONTENT-TYPE] ${finalContentType}`);
+      console.log('[STREAM STARTED]');
+    }
+
     res.status(200);
     res.setHeader('Content-Type', finalContentType);
     res.setHeader('Content-Disposition', contentDisposition);
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
 
     if (streamRes.headers['content-length']) {
       const len = parseInt(streamRes.headers['content-length'], 10);
-      if (!isNaN(len) && len > 0) {
+      if (!isNaN(len) && len > 0 && !process.env.VERCEL) {
         res.setHeader('Content-Length', len.toString());
       }
     }
+
+    let bytesTransferred = 0;
+    let firstByteLogged = false;
+
+    streamRes.on('data', (chunk: Buffer) => {
+      bytesTransferred += chunk.length;
+      if (!firstByteLogged) {
+        firstByteLogged = true;
+        if (isDev) console.log(`[FIRST BYTES RECEIVED] (${chunk.length} bytes)`);
+      }
+    });
+
+    streamRes.on('end', () => {
+      if (isDev) console.log(`[STREAM COMPLETED] (${bytesTransferred} total bytes transferred)`);
+    });
+
+    const cleanup = () => {
+      try {
+        if (typeof streamRes.destroy === 'function' && !streamRes.destroyed) {
+          streamRes.destroy();
+        }
+      } catch {}
+    };
+
+    req.on('close', cleanup);
+    req.on('aborted', cleanup);
+    res.on('close', cleanup);
 
     streamRes.pipe(res);
   });
 
   req.on('error', (err) => {
-    console.error('[Downly Stream Pipe Error]:', err);
+    if (isDev) console.error(`[STREAM ERROR] ${err?.message}`);
     if (!res.headersSent) {
       return res.status(502).json({
         success: false,
@@ -229,20 +262,21 @@ export default async function handler(req: any, res: any) {
     const filename = `Downly_${platform}_${mediaId}.${ext}`;
 
     if (isDev) {
-      console.log(`[Downly Stream Log] API Handler processing platform=${platform}, mediaId=${mediaId}, formatId=${formatId}`);
+      console.log('=== [DOWNLOAD START] ===');
+      console.log(`[PROVIDER] ${platform}`);
+      console.log(`[FORMAT] ${formatId}`);
+      console.log(`[TOKEN VALID] true`);
+      console.log(`[MEDIA RESOLUTION] mediaId=${mediaId}, platform=${platform}`);
     }
 
     // 1. High-Speed Direct JS Stream Resolution (<200ms)
     try {
       const directMedia = await resolveDirectMediaStreamUrl(targetUrl, formatId, platform);
       if (directMedia && directMedia.url) {
-        if (process.env.VERCEL === '1') {
-          return res.redirect(302, directMedia.url);
-        }
         return streamFileToClient(directMedia.url, res, filename, isAudio, formatId);
       }
-    } catch (directErr) {
-      if (isDev) console.warn('[API Stream Log] resolveDirectMediaStreamUrl notice:', directErr);
+    } catch (directErr: any) {
+      if (isDev) console.warn('[API Stream Log] resolveDirectMediaStreamUrl notice:', directErr?.message);
     }
 
     // 2. Local ytDlpService Stream Resolution

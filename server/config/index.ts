@@ -24,7 +24,9 @@ export const CONFIG = {
   // Storage & Limits
   MAX_FILE_SIZE_BYTES: (process.env.MAX_FILE_SIZE_MB ? parseInt(process.env.MAX_FILE_SIZE_MB, 10) : 500) * 1024 * 1024,
   TEMP_FILE_TTL_SEC: process.env.TEMP_FILE_TTL_SEC ? parseInt(process.env.TEMP_FILE_TTL_SEC, 10) : 300,
-  PROCESSING_TIMEOUT_MS: process.env.PROCESSING_TIMEOUT_MS ? parseInt(process.env.PROCESSING_TIMEOUT_MS, 10) : 30000,
+  METADATA_TIMEOUT_MS: process.env.METADATA_TIMEOUT_MS ? parseInt(process.env.METADATA_TIMEOUT_MS, 10) : 15000,
+  MEDIA_RESOLUTION_TIMEOUT_MS: process.env.MEDIA_RESOLUTION_TIMEOUT_MS ? parseInt(process.env.MEDIA_RESOLUTION_TIMEOUT_MS, 10) : 25000,
+  PROCESSING_TIMEOUT_MS: process.env.PROCESSING_TIMEOUT_MS ? parseInt(process.env.PROCESSING_TIMEOUT_MS, 10) : 120000,
 
   // Allowed Domains for SSRF Protection
   ALLOWED_DOMAINS: [

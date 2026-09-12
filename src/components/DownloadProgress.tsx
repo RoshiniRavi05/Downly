@@ -71,7 +71,6 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
       const link = document.createElement('a');
       link.href = finalStreamUrl;
       link.setAttribute('download', filename);
-      link.target = '_blank';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -84,11 +83,11 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
 
     } catch (err: any) {
       console.warn('[Downly] Download stream error:', err);
-      setDownloadStatus('Download error. Please try again.');
+      setDownloadStatus('Unable to prepare this download right now. Please try again.');
       setTimeout(() => {
         setDownloading(false);
         setDownloadStatus(null);
-      }, 3000);
+      }, 4000);
     }
   };
 
@@ -104,7 +103,7 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
             </div>
             <div>
               <h3 className="text-lg font-bold text-white dark:text-white light:text-slate-900">
-                Resolving media streams...
+                Preparing your download...
               </h3>
               <p className="text-xs text-slate-400 mt-1">
                 Connecting to high-speed stream for {media?.title ? `"${media.title.slice(0, 45)}..."` : 'your media'}.
@@ -124,7 +123,7 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
             </div>
             <div>
               <h3 className="text-lg font-bold text-white dark:text-white light:text-slate-900">
-                Preparing download...
+                Preparing your download...
               </h3>
               <p className="text-xs text-slate-400 mt-1">
                 Generating secure download stream.
