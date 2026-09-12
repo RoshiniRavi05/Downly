@@ -6,6 +6,39 @@ export interface ResolvedMediaStream {
   mimeType?: string;
 }
 
+async function resolveFinalRedirectUrl(rawUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    try {
+      const parsed = new URL(rawUrl);
+      const client = parsed.protocol === 'https:' ? https : http;
+      const req = client.get(
+        rawUrl,
+        {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            Referer: 'https://www.youtube.com/',
+          },
+        },
+        (res) => {
+          if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            const redirectUrl = new URL(res.headers.location, rawUrl).toString();
+            return resolve(redirectUrl);
+          }
+          resolve(rawUrl);
+        }
+      );
+      req.on('error', () => resolve(rawUrl));
+      req.setTimeout(3000, () => {
+        req.destroy();
+        resolve(rawUrl);
+      });
+    } catch {
+      resolve(rawUrl);
+    }
+  });
+}
+
 /**
  * Robust, high-speed pure JS resolver for YouTube & Instagram media streams.
  * Executes in < 300ms without external binary or Python dependencies.
@@ -50,23 +83,26 @@ export async function resolveDirectMediaStreamUrl(
             const formats = data.streamingData.formats || [];
             const adaptive = data.streamingData.adaptiveFormats || [];
 
+            let candidateUrl: string | null = null;
+
             if (isAudio) {
               const audioFormat = adaptive.find((f: any) => f.mimeType?.includes('audio') && f.url);
-              if (audioFormat && audioFormat.url) {
-                return { url: audioFormat.url, mimeType: isMp3 ? 'audio/mpeg' : 'audio/mp4' };
-              }
+              if (audioFormat && audioFormat.url) candidateUrl = audioFormat.url;
             }
 
-            // Find combined progressive format first (video + audio)
-            const combined = formats.find((f: any) => f.url && f.mimeType?.includes('video'));
-            if (combined && combined.url) {
-              return { url: combined.url, mimeType: 'video/mp4' };
+            if (!candidateUrl) {
+              const combined = formats.find((f: any) => f.url && f.mimeType?.includes('video'));
+              if (combined && combined.url) candidateUrl = combined.url;
             }
 
-            // Find best adaptive video format
-            const videoAdaptive = adaptive.find((f: any) => f.url && f.mimeType?.includes('video'));
-            if (videoAdaptive && videoAdaptive.url) {
-              return { url: videoAdaptive.url, mimeType: 'video/mp4' };
+            if (!candidateUrl) {
+              const videoAdaptive = adaptive.find((f: any) => f.url && f.mimeType?.includes('video'));
+              if (videoAdaptive && videoAdaptive.url) candidateUrl = videoAdaptive.url;
+            }
+
+            if (candidateUrl) {
+              const finalUrl = await resolveFinalRedirectUrl(candidateUrl);
+              return { url: finalUrl, mimeType: isAudio ? (isMp3 ? 'audio/mpeg' : 'audio/mp4') : 'video/mp4' };
             }
           }
         }
@@ -91,21 +127,25 @@ export async function resolveDirectMediaStreamUrl(
             const formats = playerRes.streamingData?.formats || [];
             const adaptive = playerRes.streamingData?.adaptiveFormats || [];
 
+            let candidateUrl: string | null = null;
             if (isAudio) {
               const audioFormat = adaptive.find((f: any) => f.mimeType?.includes('audio') && f.url);
-              if (audioFormat && audioFormat.url) {
-                return { url: audioFormat.url, mimeType: isMp3 ? 'audio/mpeg' : 'audio/mp4' };
-              }
+              if (audioFormat && audioFormat.url) candidateUrl = audioFormat.url;
             }
 
-            const combined = formats.find((f: any) => f.url && f.mimeType?.includes('video'));
-            if (combined && combined.url) {
-              return { url: combined.url, mimeType: 'video/mp4' };
+            if (!candidateUrl) {
+              const combined = formats.find((f: any) => f.url && f.mimeType?.includes('video'));
+              if (combined && combined.url) candidateUrl = combined.url;
             }
 
-            const videoAdaptive = adaptive.find((f: any) => f.url && f.mimeType?.includes('video'));
-            if (videoAdaptive && videoAdaptive.url) {
-              return { url: videoAdaptive.url, mimeType: 'video/mp4' };
+            if (!candidateUrl) {
+              const videoAdaptive = adaptive.find((f: any) => f.url && f.mimeType?.includes('video'));
+              if (videoAdaptive && videoAdaptive.url) candidateUrl = videoAdaptive.url;
+            }
+
+            if (candidateUrl) {
+              const finalUrl = await resolveFinalRedirectUrl(candidateUrl);
+              return { url: finalUrl, mimeType: isAudio ? (isMp3 ? 'audio/mpeg' : 'audio/mp4') : 'video/mp4' };
             }
           }
         }

@@ -236,6 +236,9 @@ export default async function handler(req: any, res: any) {
     try {
       const directMedia = await resolveDirectMediaStreamUrl(targetUrl, formatId, platform);
       if (directMedia && directMedia.url) {
+        if (process.env.VERCEL === '1') {
+          return res.redirect(302, directMedia.url);
+        }
         return streamFileToClient(directMedia.url, res, filename, isAudio, formatId);
       }
     } catch (directErr) {
