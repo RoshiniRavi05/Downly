@@ -4,6 +4,7 @@ import http from 'http';
 import ytdlPackage from '@distube/ytdl-core';
 import { ytDlpService } from '../../server/services/ytDlpService';
 import { resolveDirectMediaStreamUrl } from '../../server/services/directResolver';
+import { RapidApiService } from '../../server/services/rapidApiService';
 
 const ytdl: typeof import('@distube/ytdl-core') = (ytdlPackage as any).default || ytdlPackage;
 const TOKEN_SECRET = process.env.TOKEN_SECRET || 'downly_secret_token_key_change_in_production_987654321';
@@ -107,7 +108,7 @@ async function resolveDirectMediaStream(originalUrl: string, formatId: string, p
   return null;
 }
 
-function streamFileToClient(url: string, res: any, filename: string, isAudio: boolean, formatId: string, depth = 0) {
+function streamFileToClient(url: string, res: any, filename: string, isAudio: boolean, formatId: string, reqRange?: string, depth = 0) {
   if (depth > 6) {
     return res.status(502).json({ success: false, code: 'TOO_MANY_REDIRECTS', message: 'Too many stream redirects' });
   }
@@ -119,13 +120,14 @@ function streamFileToClient(url: string, res: any, filename: string, isAudio: bo
       Accept: '*/*',
       'Accept-Encoding': 'identity',
       Referer: 'https://www.youtube.com/',
+      ...(reqRange ? { Range: reqRange } : {}),
     },
   };
 
   const req = client.get(url, options, (streamRes) => {
     if (streamRes.statusCode && streamRes.statusCode >= 300 && streamRes.statusCode < 400 && streamRes.headers.location) {
       const redirectUrl = new URL(streamRes.headers.location, url).toString();
-      return streamFileToClient(redirectUrl, res, filename, isAudio, formatId, depth + 1);
+      return streamFileToClient(redirectUrl, res, filename, isAudio, formatId, reqRange, depth + 1);
     }
 
     if (streamRes.statusCode && streamRes.statusCode >= 400) {
@@ -161,10 +163,16 @@ function streamFileToClient(url: string, res: any, filename: string, isAudio: bo
       console.log('[STREAM STARTED]');
     }
 
-    res.status(200);
+    const statusCode = streamRes.statusCode === 206 ? 206 : 200;
+    res.status(statusCode);
     res.setHeader('Content-Type', finalContentType);
     res.setHeader('Content-Disposition', contentDisposition);
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Accept-Ranges', 'bytes');
+
+    if (streamRes.headers['content-range']) {
+      res.setHeader('Content-Range', streamRes.headers['content-range']);
+    }
 
     if (streamRes.headers['content-length']) {
       const len = parseInt(streamRes.headers['content-length'], 10);
@@ -283,7 +291,7 @@ export default async function handler(req: any, res: any) {
     try {
       const directMedia = await resolveDirectMediaStreamUrl(targetUrl, formatId, platform);
       if (directMedia && directMedia.url) {
-        return streamFileToClient(directMedia.url, res, filename, isAudio, formatId);
+        return streamFileToClient(directMedia.url, res, filename, isAudio, formatId, req.headers?.range);
       }
     } catch (directErr: any) {
       if (isDev) console.warn('[API Stream Log] resolveDirectMediaStreamUrl notice:', directErr?.message);
@@ -324,7 +332,15 @@ export default async function handler(req: any, res: any) {
     const directStreamUrl = await resolveDirectMediaStream(targetUrl, formatId, platform);
 
     if (directStreamUrl) {
-      return streamFileToClient(directStreamUrl, res, filename, isAudio, formatId);
+      return streamFileToClient(directStreamUrl, res, filename, isAudio, formatId, req.headers?.range);
+    }
+
+    if (process.env.VERCEL && platform === 'youtube' && !RapidApiService.isConfigured()) {
+      return res.status(503).json({
+        success: false,
+        code: 'RAPIDAPI_KEY_REQUIRED',
+        message: 'YouTube downloads on Vercel require RAPIDAPI_KEY in your Vercel Environment Variables to bypass datacenter bot protection.',
+      });
     }
 
     return res.status(503).json({

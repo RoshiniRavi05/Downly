@@ -1,5 +1,6 @@
 import https from 'https';
 import http from 'http';
+import { RapidApiService } from './rapidApiService';
 
 export interface ResolvedMediaStream {
   url: string;
@@ -57,6 +58,21 @@ export async function resolveDirectMediaStreamUrl(
     const videoId = videoIdMatch ? videoIdMatch[1] : null;
 
     if (videoId) {
+      // Approach 0: High-reliability RapidAPI external extraction (for Vercel serverless)
+      if (RapidApiService.isConfigured()) {
+        try {
+          const rapidResult = await RapidApiService.resolveStream(videoId, originalUrl, formatId);
+          if (rapidResult && rapidResult.url) {
+            return {
+              url: rapidResult.url,
+              mimeType: rapidResult.mimeType || (isAudio ? (isMp3 ? 'audio/mpeg' : 'audio/mp4') : 'video/mp4'),
+            };
+          }
+        } catch (rapidErr) {
+          console.warn('[DirectResolver] RapidApiService notice:', rapidErr);
+        }
+      }
+
       // Approach A: Innertube API via ANDROID_VR client (returns direct URLs in 150ms)
       try {
         const innertubeRes = await fetch('https://www.youtube.com/youtubei/v1/player', {

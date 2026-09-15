@@ -15,6 +15,10 @@ export const CONFIG = {
   
   TOKEN_SECRET: process.env.TOKEN_SECRET || 'downly_secret_token_key_change_in_production_987654321',
   
+  // External Media Extraction APIs (used for serverless Vercel fallback)
+  RAPIDAPI_KEY: process.env.RAPIDAPI_KEY || '',
+  RAPIDAPI_HOST: process.env.RAPIDAPI_HOST || 'youtube-media-downloader.p.rapidapi.com',
+  
   // Rate Limits
   RATE_LIMIT_WINDOW_MS: process.env.RATE_LIMIT_WINDOW_MS ? parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) : 60000,
   RATE_LIMIT_ANALYZE_MAX: process.env.RATE_LIMIT_ANALYZE_MAX ? parseInt(process.env.RATE_LIMIT_ANALYZE_MAX, 10) : 20,

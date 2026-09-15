@@ -66,6 +66,20 @@ export const DownloadProgress: React.FC<DownloadProgressProps> = ({
         throw new Error('Could not generate download stream URL');
       }
 
+      setDownloadStatus('Verifying stream readiness...');
+
+      // Probe stream endpoint with a 1-byte Range request to verify stream availability before browser download
+      const probeRes = await fetch(finalStreamUrl, {
+        method: 'GET',
+        headers: { Range: 'bytes=0-0' },
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (!probeRes.ok) {
+        const errData = await probeRes.json().catch(() => ({}));
+        throw new Error(errData.message || 'Media stream is unavailable from host.');
+      }
+
       setDownloadStatus('Starting download stream...');
 
       const link = document.createElement('a');

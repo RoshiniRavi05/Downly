@@ -388,6 +388,34 @@ export function App() {
       setAppState('downloading');
       setDownloadUrl(data.streamUrl);
 
+      // Probe stream endpoint with a 1-byte Range request to verify stream availability before browser download
+      try {
+        const probeRes = await fetch(data.streamUrl, {
+          method: 'GET',
+          headers: { Range: 'bytes=0-0' },
+          signal: AbortSignal.timeout(8000),
+        });
+
+        if (!probeRes.ok) {
+          const errData = await probeRes.json().catch(() => ({}));
+          setAppState('error');
+          setError({
+            code: errData.code || 'STREAM_FAILED',
+            message: errData.message || 'The media host was unable to prepare the download stream. Please try again.',
+          });
+          return;
+        }
+      } catch (probeErr: any) {
+        if (probeErr?.name === 'TimeoutError' || probeErr?.name === 'AbortError') {
+          setAppState('error');
+          setError({
+            code: 'STREAM_TIMEOUT',
+            message: 'Stream preparation timed out. Please try again or test with another format.',
+          });
+          return;
+        }
+      }
+
       const cleanTitle = (media.title || 'media').replace(/[^a-zA-Z0-9_\- ]/g, '').trim().slice(0, 40) || 'media';
       const isAudio = selectedFormatId.includes('audio') || selectedFormatId.includes('mp3');
       const ext = isAudio ? 'mp3' : 'mp4';
