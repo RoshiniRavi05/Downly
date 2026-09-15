@@ -16,8 +16,9 @@ export const CONFIG = {
   TOKEN_SECRET: process.env.TOKEN_SECRET || 'downly_secret_token_key_change_in_production_987654321',
   
   // External Media Extraction APIs (used for serverless Vercel fallback)
-  RAPIDAPI_KEY: process.env.RAPIDAPI_KEY || '',
-  RAPIDAPI_HOST: process.env.RAPIDAPI_HOST || 'youtube-media-downloader.p.rapidapi.com',
+  RAPIDAPI_KEY: process.env.RAPIDAPI_KEY || 'd9c0f2d5a4msh651c99a2bec6978p1e4577jsn0255594d768e',
+  RAPIDAPI_HOST: process.env.RAPIDAPI_HOST || 'youtube-video-downloader49.p.rapidapi.com',
+  RAPIDAPI_ENDPOINT: process.env.RAPIDAPI_ENDPOINT || 'https://youtube-video-downloader49.p.rapidapi.com/download.php',
   
   // Rate Limits
   RATE_LIMIT_WINDOW_MS: process.env.RATE_LIMIT_WINDOW_MS ? parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) : 60000,
